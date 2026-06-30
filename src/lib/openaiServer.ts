@@ -112,7 +112,7 @@ export function extractText(data: unknown) {
     .join("\n");
 }
 
-function buildOpenAiErrorMessage(message: unknown, status: number) {
+export function buildOpenAiErrorMessage(message: unknown, status: number) {
   const rawMessage = typeof message === "string" ? message : "";
 
   if (status === 429) {

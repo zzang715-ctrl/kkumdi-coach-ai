@@ -21,8 +21,15 @@ type AiResponse = {
   error?: string;
 };
 
+type PhotoAnalysisResponse = {
+  analysis?: Partial<DataCollectionForm>;
+  error?: string;
+};
+
 const maxPhotoCount = 6;
-const maxPhotoSize = 1.5 * 1024 * 1024;
+const maxOriginalPhotoSize = 8 * 1024 * 1024;
+const compressedPhotoMaxSide = 1280;
+const compressedPhotoQuality = 0.72;
 
 const emptyDataCollection: DataCollectionForm = {
   photoNotes: "",
@@ -41,6 +48,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
   const [saved, setSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isAnalyzingPhotos, setIsAnalyzingPhotos] = useState(false);
   const [aiError, setAiError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [photoMessage, setPhotoMessage] = useState("");
@@ -112,21 +120,26 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     }
 
     const selectedFiles = Array.from(files).slice(0, remainingSlots);
-    const validFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= maxPhotoSize);
+    const validFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= maxOriginalPhotoSize);
 
     if (validFiles.length < selectedFiles.length) {
-      setPhotoMessage("이미지 파일만 올릴 수 있고, 사진 한 장은 1.5MB 이하여야 합니다.");
+      setPhotoMessage("이미지 파일만 올릴 수 있고, 원본 사진 한 장은 8MB 이하여야 합니다.");
     }
 
     if (validFiles.length === 0) {
       return;
     }
 
-    const nextPhotos = await Promise.all(validFiles.map(toPhoto));
-    setForm((current) => ({ ...current, photos: [...(current.photos ?? []), ...nextPhotos] }));
-    setSaved(false);
-    setAiError("");
-    setSaveMessage("");
+    try {
+      const nextPhotos = await Promise.all(validFiles.map(toPhoto));
+      setForm((current) => ({ ...current, photos: [...(current.photos ?? []), ...nextPhotos] }));
+      setSaved(false);
+      setAiError("");
+      setSaveMessage("");
+      setPhotoMessage("사진을 올렸습니다. 앱이 저장하기 좋게 사진 크기를 자동으로 줄였습니다.");
+    } catch {
+      setPhotoMessage("사진을 읽는 중 문제가 생겼습니다. 다른 사진으로 다시 시도해 주세요.");
+    }
   }
 
   function updatePhotoNote(photoId: string, note: string) {
@@ -180,6 +193,50 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     }
   }
 
+  async function analyzePhotosWithAI() {
+    if (!form.photos?.length) {
+      setPhotoMessage("먼저 현장 사진을 1장 이상 올려 주세요.");
+      return;
+    }
+
+    setIsAnalyzingPhotos(true);
+    setAiError("");
+    setSaved(false);
+    setSaveMessage("사진을 AI가 분석하는 중입니다. 잠시만 기다려 주세요...");
+
+    try {
+      const response = await fetch("/api/ai/photo-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: { ...currentProject, dataCollection: form } }),
+      });
+      const data = (await response.json()) as PhotoAnalysisResponse;
+
+      if (!response.ok || !data.analysis) {
+        setAiError(data.error || "AI가 사진을 분석하지 못했습니다. 사진 메모를 직접 적은 뒤 AI로 정리하기를 눌러 주세요.");
+        setSaveMessage("");
+        return;
+      }
+
+      setForm((current) => ({
+        ...current,
+        photoNotes: mergeAnalysisField(current.photoNotes, data.analysis?.photoNotes),
+        fieldNotes: mergeAnalysisField(current.fieldNotes, data.analysis?.fieldNotes),
+        studentReactions: mergeAnalysisField(current.studentReactions, data.analysis?.studentReactions),
+        strengthPoints: mergeAnalysisField(current.strengthPoints, data.analysis?.strengthPoints),
+        keywords: mergeAnalysisField(current.keywords, data.analysis?.keywords),
+        summary: mergeAnalysisField(current.summary, data.analysis?.summary),
+      }));
+      setPhotoMessage("사진 AI 분석이 끝났습니다. 채워진 내용을 확인하고 자료 저장을 눌러 주세요.");
+      setSaveMessage("사진 AI 분석 결과를 항목에 채웠습니다. 확인 후 저장해 주세요.");
+    } catch {
+      setAiError("AI 사진 분석 서버와 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+      setSaveMessage("");
+    } finally {
+      setIsAnalyzingPhotos(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSaving(true);
@@ -206,7 +263,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
 
-      if (!isSaving && !isGenerating) {
+      if (!isSaving && !isGenerating && !isAnalyzingPhotos) {
         event.currentTarget.requestSubmit();
       }
     }
@@ -260,7 +317,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
             <button
               type="button"
               onClick={organizeWithAI}
-              disabled={isGenerating || isSaving}
+              disabled={isGenerating || isSaving || isAnalyzingPhotos}
               className="h-11 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white disabled:bg-slate-400"
             >
               {isGenerating ? "AI 정리 중..." : "AI로 정리하기"}
@@ -268,14 +325,14 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
             <button
               type="button"
               onClick={buildBasicSummary}
-              disabled={isGenerating || isSaving}
+              disabled={isGenerating || isSaving || isAnalyzingPhotos}
               className="h-11 rounded-md border border-teal-200 bg-white px-4 text-sm font-semibold text-teal-800"
             >
               기본 요약 만들기
             </button>
             <button
               type="submit"
-              disabled={isSaving || isGenerating}
+              disabled={isSaving || isGenerating || isAnalyzingPhotos}
               className="h-11 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white disabled:bg-slate-400"
             >
               {isSaving ? "저장 중..." : "자료 저장"}
@@ -287,7 +344,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
           <p className="text-sm font-bold text-slate-900">사진 업로드 안내</p>
           <p className="mt-1 text-sm leading-6 text-slate-600">
             사진은 현재 프로젝트에 함께 저장됩니다. 브라우저와 서버 저장을 안정적으로 유지하기 위해 최대 {maxPhotoCount}장,
-            사진 한 장은 1.5MB 이하로 올려 주세요. AI는 사진 자체를 읽기보다 사진 메모와 설명을 바탕으로 정리합니다.
+            원본 사진 한 장은 8MB 이하로 올려 주세요. 앱이 자동으로 사진 크기를 줄여 저장하고, 사진 AI 분석은 아이를 식별하지 않고 활동 장면 중심으로만 정리합니다.
           </p>
         </div>
 
@@ -315,19 +372,29 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
                 활동 장면, 결과물, 분위기 사진을 올리고 사진별 메모를 남겨 주세요.
               </p>
             </div>
-            <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
-              사진 올리기
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="sr-only"
-                onChange={(event) => {
-                  void addPhotos(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={analyzePhotosWithAI}
+                disabled={isAnalyzingPhotos || isGenerating || isSaving || !form.photos?.length}
+                className="inline-flex h-11 items-center justify-center rounded-md bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 disabled:bg-slate-400"
+              >
+                {isAnalyzingPhotos ? "사진 분석 중..." : "사진 AI 분석하기"}
+              </button>
+              <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
+                사진 올리기
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => {
+                    void addPhotos(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
           </div>
 
           {photoMessage ? <p className="mt-3 text-sm font-semibold text-amber-800">{photoMessage}</p> : null}
@@ -475,18 +542,50 @@ function toPhoto(file: File): Promise<DataCollectionPhoto> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
-    reader.onload = () => {
-      resolve({
-        id: createPhotoId(),
-        name: file.name,
-        dataUrl: String(reader.result),
-        note: "",
-        createdAt: new Date().toISOString(),
-      });
+    reader.onload = async () => {
+      try {
+        const dataUrl = await compressImageDataUrl(String(reader.result));
+        resolve({
+          id: createPhotoId(),
+          name: file.name,
+          dataUrl,
+          note: "",
+          createdAt: new Date().toISOString(),
+        });
+      } catch {
+        reject(new Error("사진을 줄이지 못했습니다."));
+      }
     };
 
     reader.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
     reader.readAsDataURL(file);
+  });
+}
+
+function compressImageDataUrl(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image();
+
+    image.onload = () => {
+      const scale = Math.min(1, compressedPhotoMaxSide / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", compressedPhotoQuality));
+    };
+
+    image.onerror = () => reject(new Error("사진을 불러오지 못했습니다."));
+    image.src = dataUrl;
   });
 }
 
@@ -502,6 +601,24 @@ function formatPhotoList(photos: DataCollectionPhoto[] | undefined) {
   return (photos ?? [])
     .map((photo, index) => `${index + 1}. ${photo.name}${photo.note ? ` - ${photo.note}` : ""}`)
     .join("\n");
+}
+
+function mergeAnalysisField(currentValue: string, incomingValue: string | undefined) {
+  const nextValue = incomingValue?.trim();
+
+  if (!nextValue) {
+    return currentValue;
+  }
+
+  if (!currentValue.trim()) {
+    return nextValue;
+  }
+
+  if (currentValue.includes(nextValue)) {
+    return currentValue;
+  }
+
+  return `${currentValue.trim()}\n\n[사진 AI 분석]\n${nextValue}`;
 }
 
 function getSaveStatus(updatedAt: string | undefined, hasUnsavedChanges: boolean) {
