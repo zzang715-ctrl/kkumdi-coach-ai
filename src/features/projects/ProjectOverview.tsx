@@ -49,8 +49,11 @@ export function ProjectOverview({ projectId }: ProjectOverviewProps) {
 
   const completedCount = countCompletedSteps(project);
   const progressPercent = getProjectProgressPercent(project);
-  const nextStep = getNextWorkflowStep(project);
+  const dataCollectionReady = isStepCompleted("data-collection", project);
+  const rawNextStep = getNextWorkflowStep(project);
+  const nextStep = dataCollectionReady ? rawNextStep : workflowSteps.find((step) => step.id === "data-collection") ?? rawNextStep;
   const previewSections = getPreviewSections(project);
+  const outputChoices = getOutputChoices(projectId, dataCollectionReady);
   const savedSections = previewSections.filter((section) => section.content.trim());
   const savedPreviewCount = savedSections.length;
   const totalPreviewCharacters = savedSections.reduce((total, section) => total + section.content.trim().length, 0);
@@ -76,14 +79,12 @@ export function ProjectOverview({ projectId }: ProjectOverviewProps) {
             >
               기본 정보 수정
             </Link>
-            {nextStep ? (
-              <Link
-                href={`/projects/${projectId}/${nextStep.href}`}
-                className="inline-flex h-11 items-center justify-center rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800"
-              >
-                다음 단계: {nextStep.label}
-              </Link>
-            ) : null}
+            <Link
+              href={dataCollectionReady ? `#output-choice` : `/projects/${projectId}/data-collection`}
+              className="inline-flex h-11 items-center justify-center rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800"
+            >
+              {dataCollectionReady ? "결과물 선택하기" : "다음 단계: 자료수집"}
+            </Link>
           </div>
         </div>
 
@@ -96,6 +97,68 @@ export function ProjectOverview({ projectId }: ProjectOverviewProps) {
           </div>
           <div className="mt-2 h-3 overflow-hidden rounded-full bg-white">
             <div className="h-full rounded-full bg-emerald-700" style={{ width: `${progressPercent}%` }} />
+          </div>
+        </div>
+      </section>
+
+      <section id="output-choice" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-bold text-emerald-700">작업 시작 순서</p>
+            <h3 className="mt-2 text-2xl font-bold text-slate-950">기본정보와 자료수집 후 필요한 결과물만 골라요</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              어떤 결과물을 만들든 먼저 기본정보와 현장 자료를 모아 두면 AI 초안의 품질이 좋아집니다.
+            </p>
+          </div>
+          <span
+            className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${
+              dataCollectionReady ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+            }`}
+          >
+            {dataCollectionReady ? "결과물 작성 준비됨" : "자료수집 먼저 필요"}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <PreparationCard
+            step="1"
+            title="기본정보"
+            description="강의명, 기관, 대상, 날짜, 목적을 담는 공통 재료입니다."
+            href={`/projects/${projectId}/edit`}
+            actionLabel="수정하기"
+            ready
+          />
+          <PreparationCard
+            step="2"
+            title="자료수집"
+            description="사진, 현장 메모, 반응, 강점 포인트를 모으는 핵심 준비 단계입니다."
+            href={`/projects/${projectId}/data-collection`}
+            actionLabel={dataCollectionReady ? "다시 보기" : "자료수집 하기"}
+            ready={dataCollectionReady}
+          />
+        </div>
+
+        <div className="mt-6 border-t border-slate-200 pt-5">
+          <p className="text-sm font-bold text-slate-900">무엇을 만들까요?</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {outputChoices.map((choice) => (
+              <Link
+                key={choice.href}
+                href={choice.href}
+                className={`rounded-lg border p-4 transition ${
+                  dataCollectionReady
+                    ? "border-emerald-200 bg-emerald-50 hover:bg-emerald-100"
+                    : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                }`}
+              >
+                <span className="text-xs font-bold text-emerald-700">{choice.eyebrow}</span>
+                <h4 className="mt-2 text-lg font-bold text-slate-950">{choice.title}</h4>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{choice.description}</p>
+                <span className="mt-4 inline-flex h-9 items-center justify-center rounded-md bg-slate-950 px-3 text-sm font-semibold text-white">
+                  {dataCollectionReady ? choice.actionLabel : "먼저 자료수집"}
+                </span>
+              </Link>
+            ))}
           </div>
         </div>
       </section>
@@ -249,6 +312,95 @@ function getPreviewSections(project: SavedProject) {
     { label: "블로그", href: "blog", content: project.blogDraft || "", updatedAt: project.blogUpdatedAt },
     { label: "마케팅", href: "marketing", content: project.marketingDraft || "", updatedAt: project.marketingUpdatedAt },
   ];
+}
+
+function getOutputChoices(projectId: string, dataCollectionReady: boolean) {
+  const baseHref = dataCollectionReady ? `/projects/${projectId}` : `/projects/${projectId}/data-collection`;
+
+  return [
+    {
+      eyebrow: "기관 제출",
+      title: "결과보고서만 작성",
+      description: "기본정보와 현장 기록을 바탕으로 기관에 제출할 보고서를 만듭니다.",
+      href: dataCollectionReady ? `${baseHref}/result-report` : baseHref,
+      actionLabel: "보고서 만들기",
+    },
+    {
+      eyebrow: "후기 글",
+      title: "블로그만 작성",
+      description: "수업 장면과 강점 포인트를 교육 후기 글로 정리합니다.",
+      href: dataCollectionReady ? `${baseHref}/blog` : baseHref,
+      actionLabel: "블로그 만들기",
+    },
+    {
+      eyebrow: "홍보 콘텐츠",
+      title: "마케팅 문구만 작성",
+      description: "SNS, 카드뉴스, 홍보 문구에 쓸 짧은 콘텐츠를 만듭니다.",
+      href: dataCollectionReady ? `${baseHref}/marketing` : baseHref,
+      actionLabel: "마케팅 만들기",
+    },
+    {
+      eyebrow: "회고 질문",
+      title: "인터뷰 질문만 작성",
+      description: "강사 회고와 후기 작성을 위한 질문을 준비합니다.",
+      href: dataCollectionReady ? `${baseHref}/interview` : baseHref,
+      actionLabel: "인터뷰 만들기",
+    },
+    {
+      eyebrow: "전체 진행",
+      title: "전체 프로젝트 계속 진행",
+      description: "제안서부터 다운로드까지 모든 단계를 이어서 진행합니다.",
+      href: dataCollectionReady ? `${baseHref}/${getNextWorkflowHrefAfterDataCollection()}` : baseHref,
+      actionLabel: "전체 흐름 보기",
+    },
+  ];
+}
+
+function getNextWorkflowHrefAfterDataCollection() {
+  return "result-report";
+}
+
+function PreparationCard({
+  step,
+  title,
+  description,
+  href,
+  actionLabel,
+  ready,
+}: {
+  step: string;
+  title: string;
+  description: string;
+  href: string;
+  actionLabel: string;
+  ready: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`rounded-lg border p-4 transition ${
+        ready ? "border-emerald-200 bg-emerald-50 hover:bg-emerald-100" : "border-amber-200 bg-amber-50 hover:bg-amber-100"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span className={`flex h-8 min-w-8 items-center justify-center rounded-md text-sm font-bold ${ready ? "bg-emerald-700 text-white" : "bg-amber-200 text-amber-950"}`}>
+          {step}
+        </span>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-lg font-bold text-slate-950">{title}</h4>
+            <span className={`rounded-full px-2 py-1 text-xs font-bold ${ready ? "bg-white text-emerald-800" : "bg-white text-amber-800"}`}>
+              {ready ? "준비됨" : "필요"}
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+          <span className="mt-4 inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900">
+            {actionLabel}
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
 }
 
 function getStepStatus(completed: boolean, isNext: boolean, isDownload: boolean) {

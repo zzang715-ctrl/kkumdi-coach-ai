@@ -28,7 +28,7 @@ const sampleForm: ProjectDraft = {
   notes: "사진 촬영 가능, 활동지 35부와 포스트잇, 필기구가 필요함",
 };
 
-const projectFlow = ["제안서", "강의 기획서", "자료수집", "결과보고서", "인터뷰", "블로그", "마케팅", "다운로드"];
+const projectFlow = ["기본정보 입력", "자료수집", "결과보고서 선택", "블로그 선택", "마케팅 선택", "인터뷰 선택", "다운로드"];
 
 export function NewProjectForm() {
   const [form, setForm] = useState<ProjectDraft>(initialForm);
@@ -114,10 +114,10 @@ export function NewProjectForm() {
             <p className="mt-2 text-sm font-semibold text-emerald-800">{saveMessage}</p>
             {preview ? (
               <Link
-                href="/projects"
+                href={`/projects/${preview.id}/data-collection`}
                 className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800"
               >
-                저장된 프로젝트 보기
+                다음 단계: 자료수집 하기
               </Link>
             ) : null}
           </div>
@@ -192,7 +192,10 @@ export function NewProjectForm() {
 
       <aside className="grid gap-5">
         <section className="rounded-lg border border-slate-200 bg-[#fffaf0] p-5 shadow-sm">
-          <p className="text-sm font-bold text-amber-800">다음에 이어질 작업</p>
+          <p className="text-sm font-bold text-amber-800">추천 작업 순서</p>
+          <p className="mt-2 text-sm leading-6 text-amber-950">
+            먼저 기본정보와 자료수집을 준비한 뒤, 필요한 결과물만 골라 만들 수 있습니다.
+          </p>
           <div className="mt-4 grid gap-2">
             {projectFlow.map((step, index) => (
               <div key={step} className="flex items-center gap-3 rounded-md border border-amber-200 bg-white p-3">
