@@ -56,7 +56,7 @@ export default function Home() {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-5 py-8 sm:px-8 lg:px-10">
           <nav className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-sm font-semibold text-emerald-700">v2.1 완성도 안내 추가</p>
+              <p className="text-sm font-semibold text-emerald-700">v2.2 저장 방식 안내 추가</p>
               <h1 className="mt-1 text-2xl font-bold text-slate-950 sm:text-3xl">꿈디코치 AI 강사비서</h1>
             </div>
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
@@ -117,6 +117,13 @@ export default function Home() {
                 >
                   저장된 프로젝트 보기
                 </Link>
+              </div>
+              <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
+                <p className="font-bold">로그인 없이도 바로 사용할 수 있습니다.</p>
+                <p className="mt-1">
+                  로그인 전 프로젝트는 현재 브라우저에 임시 저장됩니다. 계정을 만들고 로그인하면 프로젝트를
+                  Supabase 서버에 안전하게 저장하고 다른 기기에서도 이어서 볼 수 있습니다.
+                </p>
               </div>
             </div>
 

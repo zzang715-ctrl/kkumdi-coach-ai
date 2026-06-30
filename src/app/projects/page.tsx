@@ -45,6 +45,13 @@ export default function ProjectsPage() {
             로그인과 Supabase 설정이 되어 있으면 서버에 저장된 프로젝트를 불러옵니다. 아직 설정하지 않았거나
             로그아웃 상태라면 이 브라우저에 저장된 프로젝트를 보여줍니다.
           </p>
+          <div className="mt-5 max-w-3xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+            <p className="font-bold">저장 위치 안내</p>
+            <p className="mt-1">
+              로그인하지 않아도 프로젝트를 만들고 저장할 수 있습니다. 이 경우 현재 브라우저에만 보관됩니다.
+              로그인하면 같은 프로젝트를 Supabase 서버에 저장해 더 안전하게 관리할 수 있습니다.
+            </p>
+          </div>
         </div>
       </section>
 
