@@ -15,6 +15,7 @@ export type SavedProject = {
   lecturePlanUpdatedAt?: string;
   dataCollection?: {
     photoNotes: string;
+    photos?: DataCollectionPhoto[];
     fieldNotes: string;
     studentReactions: string;
     strengthPoints: string;
@@ -30,6 +31,14 @@ export type SavedProject = {
   blogUpdatedAt?: string;
   marketingDraft?: string;
   marketingUpdatedAt?: string;
+};
+
+export type DataCollectionPhoto = {
+  id: string;
+  name: string;
+  dataUrl: string;
+  note: string;
+  createdAt: string;
 };
 
 export type ProjectDraft = Omit<

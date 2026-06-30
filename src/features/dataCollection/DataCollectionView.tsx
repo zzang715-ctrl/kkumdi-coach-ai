@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import type { SavedProject } from "@/features/projects/projectStorage";
+import type { DataCollectionPhoto, SavedProject } from "@/features/projects/projectStorage";
 import { findLocalProject, formatProjectDate, updateLocalProject } from "@/features/projects/localProjectStorage";
 import { getNextWorkflowStep } from "@/features/projects/projectProgress";
 import { ProjectWorkflowNav } from "@/features/projects/ProjectWorkflowNav";
@@ -20,8 +21,12 @@ type AiResponse = {
   error?: string;
 };
 
+const maxPhotoCount = 6;
+const maxPhotoSize = 1.5 * 1024 * 1024;
+
 const emptyDataCollection: DataCollectionForm = {
   photoNotes: "",
+  photos: [],
   fieldNotes: "",
   studentReactions: "",
   strengthPoints: "",
@@ -38,9 +43,13 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiError, setAiError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
+  const [photoMessage, setPhotoMessage] = useState("");
 
   const collectedCount = useMemo(() => {
-    return Object.entries(form).filter(([key, value]) => key !== "summary" && value.trim().length > 0).length;
+    const textCount = Object.entries(form).filter(([key, value]) => {
+      return key !== "summary" && key !== "photos" && typeof value === "string" && value.trim().length > 0;
+    }).length;
+    return textCount + (form.photos?.length ? 1 : 0);
   }, [form]);
   const maybeProject = project;
   const hasUnsavedChanges = Boolean(
@@ -86,6 +95,56 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     setSaved(false);
     setAiError("");
     setSaveMessage("");
+  }
+
+  async function addPhotos(files: FileList | null) {
+    if (!files?.length) {
+      return;
+    }
+
+    setPhotoMessage("");
+    const currentPhotos = form.photos ?? [];
+    const remainingSlots = maxPhotoCount - currentPhotos.length;
+
+    if (remainingSlots <= 0) {
+      setPhotoMessage(`사진은 최대 ${maxPhotoCount}장까지 올릴 수 있습니다.`);
+      return;
+    }
+
+    const selectedFiles = Array.from(files).slice(0, remainingSlots);
+    const validFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= maxPhotoSize);
+
+    if (validFiles.length < selectedFiles.length) {
+      setPhotoMessage("이미지 파일만 올릴 수 있고, 사진 한 장은 1.5MB 이하여야 합니다.");
+    }
+
+    if (validFiles.length === 0) {
+      return;
+    }
+
+    const nextPhotos = await Promise.all(validFiles.map(toPhoto));
+    setForm((current) => ({ ...current, photos: [...(current.photos ?? []), ...nextPhotos] }));
+    setSaved(false);
+    setAiError("");
+    setSaveMessage("");
+  }
+
+  function updatePhotoNote(photoId: string, note: string) {
+    setForm((current) => ({
+      ...current,
+      photos: (current.photos ?? []).map((photo) => (photo.id === photoId ? { ...photo, note } : photo)),
+    }));
+    setSaved(false);
+    setAiError("");
+    setSaveMessage("");
+  }
+
+  function removePhoto(photoId: string) {
+    setForm((current) => ({ ...current, photos: (current.photos ?? []).filter((photo) => photo.id !== photoId) }));
+    setSaved(false);
+    setAiError("");
+    setSaveMessage("");
+    setPhotoMessage("사진을 목록에서 삭제했습니다. 저장을 눌러 반영해 주세요.");
   }
 
   function buildBasicSummary() {
@@ -225,9 +284,10 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
         </div>
 
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <p className="text-sm font-bold text-slate-900">결제 전 테스트 방법</p>
+          <p className="text-sm font-bold text-slate-900">사진 업로드 안내</p>
           <p className="mt-1 text-sm leading-6 text-slate-600">
-            OpenAI 결제 전에는 AI 정리 대신 기본 요약 만들기를 눌러 저장과 다음 단계 이동을 확인할 수 있습니다.
+            사진은 현재 프로젝트에 함께 저장됩니다. 브라우저와 서버 저장을 안정적으로 유지하기 위해 최대 {maxPhotoCount}장,
+            사진 한 장은 1.5MB 이하로 올려 주세요. AI는 사진 자체를 읽기보다 사진 메모와 설명을 바탕으로 정리합니다.
           </p>
         </div>
 
@@ -246,6 +306,75 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
             ) : null}
           </div>
         ) : null}
+
+        <section className="mt-5 rounded-lg border border-slate-200 bg-white p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-bold text-slate-900">현장 사진</p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                활동 장면, 결과물, 분위기 사진을 올리고 사진별 메모를 남겨 주세요.
+              </p>
+            </div>
+            <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
+              사진 올리기
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="sr-only"
+                onChange={(event) => {
+                  void addPhotos(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+
+          {photoMessage ? <p className="mt-3 text-sm font-semibold text-amber-800">{photoMessage}</p> : null}
+
+          {form.photos?.length ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {form.photos.map((photo) => (
+                <article key={photo.id} className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                  <Image
+                    src={photo.dataUrl}
+                    alt={photo.name}
+                    width={360}
+                    height={176}
+                    unoptimized
+                    className="h-44 w-full object-cover"
+                  />
+                  <div className="grid gap-3 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 truncate text-sm font-bold text-slate-900">{photo.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(photo.id)}
+                        className="shrink-0 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                    <label className="grid gap-1 text-xs font-bold text-slate-600">
+                      사진 메모
+                      <textarea
+                        value={photo.note}
+                        onChange={(event) => updatePhotoNote(photo.id, event.target.value)}
+                        rows={3}
+                        placeholder="예: 모둠별 발표 장면, 활동지 결과물, 아이들이 서로 설명하는 모습"
+                        className="resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal leading-6 text-slate-900 outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+                      />
+                    </label>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-semibold text-slate-600">
+              아직 올린 사진이 없습니다. 현장 사진을 올리면 이곳에 미리보기가 표시됩니다.
+            </div>
+          )}
+        </section>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <Textarea label="사진 설명" value={form.photoNotes} onChange={(value) => updateField("photoNotes", value)} placeholder="예: 발표 장면, 활동지 작성 모습" />
@@ -268,7 +397,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
         </p>
 
         <div className="mt-6 flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-medium text-slate-600">수집한 항목: {collectedCount} / 5개</p>
+          <p className="text-sm font-medium text-slate-600">수집한 항목: {collectedCount} / 6개</p>
           <Link href="/projects" className="inline-flex h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold">
             프로젝트 목록으로
           </Link>
@@ -317,12 +446,17 @@ function ProjectInfo({ label, value }: { label: string; value: string }) {
 }
 
 function createSummary(project: SavedProject, form: DataCollectionForm) {
+  const photoList = formatPhotoList(form.photos);
+
   return `[자료수집 요약]
 
 ${project.title || "강의 프로젝트"} 현장 기록을 정리했습니다.
 
 1. 사진 및 장면 기록
 ${form.photoNotes || "사진 설명은 아직 입력하지 않았습니다."}
+
+업로드한 사진 메모
+${photoList || "업로드한 사진은 아직 없습니다."}
 
 2. 현장 메모
 ${form.fieldNotes || "현장 메모는 아직 입력하지 않았습니다."}
@@ -335,6 +469,39 @@ ${form.strengthPoints || "강점 포인트는 추가 기록이 필요합니다."
 
 5. 핵심 키워드
 ${form.keywords || "핵심 키워드는 추가 정리가 필요합니다."}`;
+}
+
+function toPhoto(file: File): Promise<DataCollectionPhoto> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      resolve({
+        id: createPhotoId(),
+        name: file.name,
+        dataUrl: String(reader.result),
+        note: "",
+        createdAt: new Date().toISOString(),
+      });
+    };
+
+    reader.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function createPhotoId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatPhotoList(photos: DataCollectionPhoto[] | undefined) {
+  return (photos ?? [])
+    .map((photo, index) => `${index + 1}. ${photo.name}${photo.note ? ` - ${photo.note}` : ""}`)
+    .join("\n");
 }
 
 function getSaveStatus(updatedAt: string | undefined, hasUnsavedChanges: boolean) {

@@ -9,6 +9,9 @@ export const POST = createProjectAiRoute({
 
 function buildDataCollectionPrompt(project: SavedProject) {
   const data = project.dataCollection;
+  const photoList = (data?.photos ?? [])
+    .map((photo, index) => `${index + 1}. ${photo.name}${photo.note ? ` - ${photo.note}` : ""}`)
+    .join("\n");
 
   return `아래 현장 기록을 바탕으로 자료수집 요약을 작성해 주세요.
 
@@ -32,6 +35,8 @@ function buildDataCollectionPrompt(project: SavedProject) {
 
 현장 기록:
 - 사진 설명: ${data?.photoNotes || "미입력"}
+- 업로드한 사진 메모:
+${photoList || "업로드한 사진 메모가 없습니다."}
 - 현장 메모: ${data?.fieldNotes || "미입력"}
 - 참여자 반응: ${data?.studentReactions || "미입력"}
 - 강점 포인트: ${data?.strengthPoints || "미입력"}
