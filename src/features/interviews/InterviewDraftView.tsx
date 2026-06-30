@@ -15,7 +15,7 @@ export function InterviewDraftView({ projectId }: InterviewDraftViewProps) {
       theme="violet"
       eyebrow="인터뷰 AI"
       title="강사 회고와 블로그 작성을 위한 질문"
-      description="질문 아래에 답을 적어 저장하면 블로그 AI에서 참고할 수 있습니다."
+      description="자료수집 기록과 현장 사진이 있으면 함께 참고해 질문을 만듭니다. 답을 적어 저장하면 블로그 AI에서 이어서 활용할 수 있습니다."
       fieldLabel="인터뷰 질문과 답변 본문"
       copyLabel="질문 복사"
       saveLabel="인터뷰 저장"
@@ -56,5 +56,9 @@ function buildInterviewDraft(project: SavedProject) {
 답변:
 
 참고 자료:
-${project.resultReportDraft || project.dataCollection?.summary || "아직 저장된 참고 자료가 없습니다."}`;
+${project.resultReportDraft || project.dataCollection?.summary || "아직 저장된 참고 자료가 없습니다."}
+
+사진 및 현장 상황:
+${project.dataCollection?.photoNotes || "사진 설명은 아직 없습니다."}
+${project.dataCollection?.fieldNotes || "현장 메모는 아직 없습니다."}`;
 }
