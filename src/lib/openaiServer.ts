@@ -64,7 +64,7 @@ export function createProjectAiRoute({ systemPrompt, buildPrompt }: AiRouteOptio
       if (!response.ok) {
         return NextResponse.json(
           {
-            error: data?.error?.message || "OpenAI API 호출 중 오류가 발생했습니다.",
+            error: buildOpenAiErrorMessage(data?.error?.message, response.status),
           },
           { status: response.status },
         );
@@ -110,4 +110,28 @@ export function extractText(data: unknown) {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function buildOpenAiErrorMessage(message: unknown, status: number) {
+  const rawMessage = typeof message === "string" ? message : "";
+
+  if (status === 429) {
+    return [
+      "OpenAI 사용량 한도 또는 결제 설정 때문에 AI 생성이 잠시 막혔습니다.",
+      "OpenAI 결제와 사용량 한도를 확인한 뒤 다시 눌러 주세요.",
+      rawMessage ? `원문 오류: ${rawMessage}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (status === 401) {
+    return "OpenAI API 키가 올바르지 않습니다. .env.local 또는 Vercel 환경변수의 OPENAI_API_KEY 값을 다시 확인해 주세요.";
+  }
+
+  if (status === 403) {
+    return "OpenAI API 접근 권한이 없습니다. API 키 권한과 프로젝트 설정을 확인해 주세요.";
+  }
+
+  return rawMessage || "OpenAI API 호출 중 오류가 발생했습니다.";
 }
