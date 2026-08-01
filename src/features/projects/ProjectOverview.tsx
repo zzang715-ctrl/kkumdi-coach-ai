@@ -139,7 +139,7 @@ export function ProjectOverview({ projectId }: ProjectOverviewProps) {
         </div>
 
         <div className="mt-6 border-t border-slate-200 pt-5">
-          <p className="text-sm font-bold text-slate-900">무엇을 만들까요?</p>
+            <p className="text-sm font-bold text-slate-900">빠른 작업 선택</p>
           <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {outputChoices.map((choice) => (
               <Link
@@ -320,14 +320,14 @@ function getOutputChoices(projectId: string, dataCollectionReady: boolean) {
   return [
     {
       eyebrow: "기관 제출",
-      title: "결과보고서만 작성",
+      title: "결과보고서만 만들기",
       description: "기본정보와 현장 기록을 바탕으로 기관에 제출할 보고서를 만듭니다.",
       href: dataCollectionReady ? `${baseHref}/result-report` : baseHref,
       actionLabel: "보고서 만들기",
     },
     {
       eyebrow: "후기 글",
-      title: "블로그만 작성",
+      title: "블로그만 쓰기",
       description: "수업 장면과 강점 포인트를 교육 후기 글로 정리합니다.",
       href: dataCollectionReady ? `${baseHref}/blog` : baseHref,
       actionLabel: "블로그 만들기",
