@@ -16,6 +16,7 @@ export type SavedProject = {
   dataCollection?: {
     photoNotes: string;
     photos?: DataCollectionPhoto[];
+    materials?: TeachingMaterial[];
     fieldNotes: string;
     studentReactions: string;
     strengthPoints: string;
@@ -37,6 +38,15 @@ export type DataCollectionPhoto = {
   id: string;
   name: string;
   dataUrl: string;
+  note: string;
+  createdAt: string;
+};
+
+export type TeachingMaterial = {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl?: string;
   note: string;
   createdAt: string;
 };

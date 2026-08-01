@@ -4,13 +4,25 @@ import type { SavedProject } from "@/features/projects/projectStorage";
 type AiRouteOptions = {
   systemPrompt: string;
   buildPrompt: (project: SavedProject) => string;
+  includeTeachingMaterials?: boolean;
 };
 
 type AiRequestBody = {
   project?: SavedProject;
 };
 
-export function createProjectAiRoute({ systemPrompt, buildPrompt }: AiRouteOptions) {
+type OpenAiInputContent =
+  | {
+      type: "input_text";
+      text: string;
+    }
+  | {
+      type: "input_file";
+      filename: string;
+      file_data: string;
+    };
+
+export function createProjectAiRoute({ systemPrompt, buildPrompt, includeTeachingMaterials = false }: AiRouteOptions) {
   return async function POST(request: Request) {
     const apiKey = process.env.OPENAI_API_KEY;
     const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -38,6 +50,8 @@ export function createProjectAiRoute({ systemPrompt, buildPrompt }: AiRouteOptio
     }
 
     try {
+      const prompt = buildPrompt(body.project);
+      const materialInputs = includeTeachingMaterials ? buildTeachingMaterialInputs(body.project) : [];
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
@@ -53,7 +67,7 @@ export function createProjectAiRoute({ systemPrompt, buildPrompt }: AiRouteOptio
             },
             {
               role: "user",
-              content: buildPrompt(body.project),
+              content: materialInputs.length ? [{ type: "input_text", text: prompt }, ...materialInputs] : prompt,
             },
           ],
         }),
@@ -110,6 +124,30 @@ export function extractText(data: unknown) {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+export function buildTeachingMaterialInputs(project: SavedProject): OpenAiInputContent[] {
+  return (project.dataCollection?.materials ?? [])
+    .filter(
+      (material): material is typeof material & { dataUrl: string } =>
+        Boolean(material.dataUrl) && isSupportedMaterialForOpenAi(material.name),
+    )
+    .map((material) => ({
+      type: "input_file",
+      filename: material.name,
+      file_data: material.dataUrl,
+    }));
+}
+
+export function formatTeachingMaterialList(project: SavedProject) {
+  return (project.dataCollection?.materials ?? [])
+    .map((material, index) => `${index + 1}. ${material.name}${material.note ? ` - ${material.note}` : ""}`)
+    .join("\n");
+}
+
+function isSupportedMaterialForOpenAi(fileName: string) {
+  const extension = fileName.split(".").pop()?.toLowerCase();
+  return ["pdf", "txt", "md"].includes(extension || "");
 }
 
 export function buildOpenAiErrorMessage(message: unknown, status: number) {

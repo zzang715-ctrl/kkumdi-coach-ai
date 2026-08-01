@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import type { DataCollectionPhoto, SavedProject } from "@/features/projects/projectStorage";
+import type { DataCollectionPhoto, SavedProject, TeachingMaterial } from "@/features/projects/projectStorage";
 import { findLocalProject, formatProjectDate, updateLocalProject } from "@/features/projects/localProjectStorage";
 import { getNextWorkflowStep } from "@/features/projects/projectProgress";
 import { ProjectWorkflowNav } from "@/features/projects/ProjectWorkflowNav";
@@ -30,10 +30,14 @@ const maxPhotoCount = 6;
 const maxOriginalPhotoSize = 8 * 1024 * 1024;
 const compressedPhotoMaxSide = 1280;
 const compressedPhotoQuality = 0.72;
+const maxMaterialCount = 4;
+const maxReadableMaterialSize = 4 * 1024 * 1024;
+const materialAccept = ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md";
 
 const emptyDataCollection: DataCollectionForm = {
   photoNotes: "",
   photos: [],
+  materials: [],
   fieldNotes: "",
   studentReactions: "",
   strengthPoints: "",
@@ -55,9 +59,9 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
 
   const collectedCount = useMemo(() => {
     const textCount = Object.entries(form).filter(([key, value]) => {
-      return key !== "summary" && key !== "photos" && typeof value === "string" && value.trim().length > 0;
+      return key !== "summary" && key !== "photos" && key !== "materials" && typeof value === "string" && value.trim().length > 0;
     }).length;
-    return textCount + (form.photos?.length ? 1 : 0);
+    return textCount + (form.photos?.length ? 1 : 0) + (form.materials?.length ? 1 : 0);
   }, [form]);
   const maybeProject = project;
   const hasUnsavedChanges = Boolean(
@@ -158,6 +162,67 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     setAiError("");
     setSaveMessage("");
     setPhotoMessage("사진을 목록에서 삭제했습니다. 저장을 눌러 반영해 주세요.");
+  }
+
+  async function addMaterials(files: FileList | null) {
+    if (!files?.length) {
+      return;
+    }
+
+    setPhotoMessage("");
+    const currentMaterials = form.materials ?? [];
+    const remainingSlots = maxMaterialCount - currentMaterials.length;
+
+    if (remainingSlots <= 0) {
+      setPhotoMessage(`강의자료는 최대 ${maxMaterialCount}개까지 올릴 수 있습니다.`);
+      return;
+    }
+
+    const selectedFiles = Array.from(files).slice(0, remainingSlots);
+    const validFiles = selectedFiles.filter((file) => {
+      if (!isAllowedMaterial(file)) {
+        return false;
+      }
+
+      return !isReadableMaterial(file.name) || file.size <= maxReadableMaterialSize;
+    });
+
+    if (validFiles.length < selectedFiles.length) {
+      setPhotoMessage("PDF, TXT, MD는 파일 하나가 4MB 이하여야 합니다. PPT와 Word는 파일명과 메모만 저장합니다.");
+    }
+
+    if (validFiles.length === 0) {
+      return;
+    }
+
+    try {
+      const nextMaterials = await Promise.all(validFiles.map(toMaterial));
+      setForm((current) => ({ ...current, materials: [...(current.materials ?? []), ...nextMaterials] }));
+      setSaved(false);
+      setAiError("");
+      setSaveMessage("");
+      setPhotoMessage("강의자료를 올렸습니다. 결과보고서와 블로그 AI가 함께 참고합니다.");
+    } catch {
+      setPhotoMessage("강의자료를 읽는 중 문제가 생겼습니다. 다른 파일로 다시 시도해 주세요.");
+    }
+  }
+
+  function updateMaterialNote(materialId: string, note: string) {
+    setForm((current) => ({
+      ...current,
+      materials: (current.materials ?? []).map((material) => (material.id === materialId ? { ...material, note } : material)),
+    }));
+    setSaved(false);
+    setAiError("");
+    setSaveMessage("");
+  }
+
+  function removeMaterial(materialId: string) {
+    setForm((current) => ({ ...current, materials: (current.materials ?? []).filter((material) => material.id !== materialId) }));
+    setSaved(false);
+    setAiError("");
+    setSaveMessage("");
+    setPhotoMessage("강의자료를 목록에서 삭제했습니다. 저장을 눌러 반영해 주세요.");
   }
 
   function buildBasicSummary() {
@@ -298,7 +363,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
         <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-sm font-bold text-teal-700">자료수집 AI</p>
-            <h2 className="mt-2 text-2xl font-bold text-slate-950">사진, 메모, 관찰 기록 정리</h2>
+            <h2 className="mt-2 text-2xl font-bold text-slate-950">사진, 강의자료, 메모 정리</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               현장 기록을 모아 결과보고서와 블로그의 재료로 정리합니다.
             </p>
@@ -443,6 +508,72 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
           )}
         </section>
 
+        <section className="mt-5 rounded-lg border border-slate-200 bg-white p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-bold text-slate-900">강의자료</p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                강의 PPT, 강의 계획안, 활동지, 기관 안내문을 올리면 결과보고서와 블로그 AI가 함께 참고합니다.
+              </p>
+            </div>
+            <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
+              자료 올리기
+              <input
+                type="file"
+                accept={materialAccept}
+                multiple
+                className="sr-only"
+                onChange={(event) => {
+                  void addMaterials(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+            PDF, PPT, PPTX, DOC, DOCX, TXT, MD 파일을 올릴 수 있습니다. AI가 본문까지 안정적으로 읽는 자료는 PDF, TXT, MD입니다.
+            PPT나 Word 자료는 저장공간 보호를 위해 파일명과 메모를 우선 참고하므로, 정확한 분석이 필요하면 PDF로 저장해서 올려 주세요.
+          </div>
+
+          {form.materials?.length ? (
+            <div className="mt-4 grid gap-3">
+              {form.materials.map((material, index) => (
+                <article key={material.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-teal-700">강의자료 {index + 1}</p>
+                      <p className="mt-1 break-all text-sm font-bold text-slate-950">{material.name}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">{material.mimeType || "파일 형식 확인 필요"}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeMaterial(material.id)}
+                      className="h-9 rounded-md border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                  <label className="mt-3 grid gap-1 text-xs font-bold text-slate-600">
+                    자료 메모
+                    <textarea
+                      value={material.note}
+                      onChange={(event) => updateMaterialNote(material.id, event.target.value)}
+                      rows={3}
+                      placeholder="예: 2차시 강의안, 강점 카드 활동 설명, 기관 제출용 운영 계획안"
+                      className="resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal leading-6 text-slate-900 outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+                    />
+                  </label>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-semibold text-slate-600">
+              아직 올린 강의자료가 없습니다. 강의 계획안이나 PPT를 올리면 AI가 결과보고서와 블로그 작성 때 함께 참고합니다.
+            </div>
+          )}
+        </section>
+
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <Textarea label="사진 설명" value={form.photoNotes} onChange={(value) => updateField("photoNotes", value)} placeholder="예: 발표 장면, 활동지 작성 모습" />
           <Textarea label="현장 메모" value={form.fieldNotes} onChange={(value) => updateField("fieldNotes", value)} placeholder="예: 활동이 시작되자 질문이 많아짐" />
@@ -464,7 +595,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
         </p>
 
         <div className="mt-6 flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-medium text-slate-600">수집한 항목: {collectedCount} / 6개</p>
+          <p className="text-sm font-medium text-slate-600">수집한 항목: {collectedCount} / 7개</p>
           <Link href="/projects" className="inline-flex h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold">
             프로젝트 목록으로
           </Link>
@@ -514,6 +645,7 @@ function ProjectInfo({ label, value }: { label: string; value: string }) {
 
 function createSummary(project: SavedProject, form: DataCollectionForm) {
   const photoList = formatPhotoList(form.photos);
+  const materialList = formatMaterialList(form.materials);
 
   return `[자료수집 요약]
 
@@ -524,6 +656,9 @@ ${form.photoNotes || "사진 설명은 아직 입력하지 않았습니다."}
 
 업로드한 사진 메모
 ${photoList || "업로드한 사진은 아직 없습니다."}
+
+업로드한 강의자료
+${materialList || "업로드한 강의자료는 아직 없습니다."}
 
 2. 현장 메모
 ${form.fieldNotes || "현장 메모는 아직 입력하지 않았습니다."}
@@ -558,6 +693,36 @@ function toPhoto(file: File): Promise<DataCollectionPhoto> {
     };
 
     reader.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function toMaterial(file: File): Promise<TeachingMaterial> {
+  if (!isReadableMaterial(file.name)) {
+    return Promise.resolve({
+      id: createPhotoId(),
+      name: file.name,
+      mimeType: file.type || getMaterialMimeType(file.name),
+      note: "",
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      resolve({
+        id: createPhotoId(),
+        name: file.name,
+        mimeType: file.type || getMaterialMimeType(file.name),
+        dataUrl: String(reader.result),
+        note: "",
+        createdAt: new Date().toISOString(),
+      });
+    };
+
+    reader.onerror = () => reject(new Error("강의자료를 읽지 못했습니다."));
     reader.readAsDataURL(file);
   });
 }
@@ -601,6 +766,45 @@ function formatPhotoList(photos: DataCollectionPhoto[] | undefined) {
   return (photos ?? [])
     .map((photo, index) => `${index + 1}. ${photo.name}${photo.note ? ` - ${photo.note}` : ""}`)
     .join("\n");
+}
+
+function formatMaterialList(materials: TeachingMaterial[] | undefined) {
+  return (materials ?? [])
+    .map((material, index) => `${index + 1}. ${material.name}${material.note ? ` - ${material.note}` : ""}`)
+    .join("\n");
+}
+
+function isAllowedMaterial(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return ["pdf", "ppt", "pptx", "doc", "docx", "txt", "md"].includes(extension || "");
+}
+
+function isReadableMaterial(fileName: string) {
+  const extension = fileName.split(".").pop()?.toLowerCase();
+  return ["pdf", "txt", "md"].includes(extension || "");
+}
+
+function getMaterialMimeType(fileName: string) {
+  const extension = fileName.split(".").pop()?.toLowerCase();
+
+  switch (extension) {
+    case "pdf":
+      return "application/pdf";
+    case "ppt":
+      return "application/vnd.ms-powerpoint";
+    case "pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    case "doc":
+      return "application/msword";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "txt":
+      return "text/plain";
+    case "md":
+      return "text/markdown";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function mergeAnalysisField(currentValue: string, incomingValue: string | undefined) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { SavedProject } from "@/features/projects/projectStorage";
-import { buildOpenAiErrorMessage, extractText } from "@/lib/openaiServer";
+import { buildOpenAiErrorMessage, buildTeachingMaterialInputs, extractText, formatTeachingMaterialList } from "@/lib/openaiServer";
 
 type AiRequestBody = {
   project?: SavedProject;
@@ -33,6 +33,7 @@ export async function POST(request: Request) {
   }
 
   const photos = body.project.dataCollection?.photos ?? [];
+  const materialInputs = buildTeachingMaterialInputs(body.project);
 
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
                 type: "input_image",
                 image_url: photo.dataUrl,
               })),
+              ...materialInputs,
             ],
           },
         ],
@@ -93,6 +95,7 @@ function buildBlogPrompt(project: SavedProject, photoCount: number) {
   const photoList = (data?.photos ?? [])
     .map((photo, index) => `${index + 1}. ${photo.name}${photo.note ? ` - ${photo.note}` : ""}`)
     .join("\n");
+  const materialList = formatTeachingMaterialList(project);
   const photoInstruction =
     photoCount > 0
       ? `- 업로드된 사진을 보고 블로그 흐름에 맞는 삽입 위치를 정하기
@@ -104,7 +107,7 @@ function buildBlogPrompt(project: SavedProject, photoCount: number) {
 - 사진이 어울리지 않는 경우에는 억지로 넣지 말고 "사진 위치 제안" 섹션에 제외 이유를 적기`
       : `- 업로드된 사진이 없으므로 글 마지막에 "사진 위치 제안" 섹션을 만들고, 어떤 사진을 추가하면 좋은지 안내하기`;
 
-  return `아래 프로젝트 정보, 인터뷰 답변, 자료수집 기록${photoCount > 0 ? ", 업로드된 현장 사진" : ""}을 바탕으로 교육 후기 블로그 글 초안을 작성해 주세요.
+  return `아래 프로젝트 정보, 인터뷰 답변, 자료수집 기록, 업로드된 강의자료${photoCount > 0 ? ", 업로드된 현장 사진" : ""}을 바탕으로 교육 후기 블로그 글 초안을 작성해 주세요.
 
 조건:
 - 한국어로 작성
@@ -112,6 +115,7 @@ function buildBlogPrompt(project: SavedProject, photoCount: number) {
 - 도입, 현장 분위기, 주요 활동, 기억에 남는 장면, 참여자 반응, 강사 회고, 마무리 순서로 작성
 - 블로그 독자가 자연스럽게 읽을 수 있는 따뜻한 문체 사용
 - 기관명, 참여자 반응, 활동 장면을 적절히 반영
+- 강의자료가 있으면 강의 목적, 활동 흐름, 핵심 개념을 블로그 글에 자연스럽게 반영
 - 개인정보가 드러나지 않도록 특정 학생 이름은 적지 않기
 - 사진 속 사람의 신원, 얼굴, 성별, 감정 상태를 단정하지 않기
 - 없는 정보는 지어내지 말고 자연스럽게 비워두거나 "추가하면 좋은 내용"으로 표시
@@ -143,5 +147,8 @@ ${project.resultReportDraft || "아직 저장된 결과보고서가 없습니다
 - 요약: ${data?.summary || "미입력"}
 
 업로드된 사진 메모:
-${photoList || "업로드된 사진 메모가 없습니다."}`;
+${photoList || "업로드된 사진 메모가 없습니다."}
+
+업로드된 강의자료:
+${materialList || "업로드된 강의자료가 없습니다."}`;
 }
