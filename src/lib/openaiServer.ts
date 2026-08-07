@@ -5,6 +5,7 @@ type AiRouteOptions = {
   systemPrompt: string;
   buildPrompt: (project: SavedProject) => string;
   includeTeachingMaterials?: boolean;
+  transformText?: (text: string, project: SavedProject) => string;
 };
 
 type AiRequestBody = {
@@ -22,7 +23,7 @@ type OpenAiInputContent =
       file_data: string;
     };
 
-export function createProjectAiRoute({ systemPrompt, buildPrompt, includeTeachingMaterials = false }: AiRouteOptions) {
+export function createProjectAiRoute({ systemPrompt, buildPrompt, includeTeachingMaterials = false, transformText }: AiRouteOptions) {
   return async function POST(request: Request) {
     const apiKey = process.env.OPENAI_API_KEY;
     const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -90,7 +91,7 @@ export function createProjectAiRoute({ systemPrompt, buildPrompt, includeTeachin
         return NextResponse.json({ error: "AI 응답에서 본문을 찾을 수 없습니다." }, { status: 500 });
       }
 
-      return NextResponse.json({ text });
+      return NextResponse.json({ text: transformText ? transformText(text, body.project) : text });
     } catch {
       return NextResponse.json({ error: "AI 서버와 연결할 수 없습니다." }, { status: 500 });
     }

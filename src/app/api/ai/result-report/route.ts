@@ -6,6 +6,7 @@ export const POST = createProjectAiRoute({
     "당신은 교육 강사와 코치를 돕는 한국어 AI 강사비서입니다. 기관에 제출할 수 있는 결과보고서를 정확하고 정중한 문체로 작성합니다.",
   buildPrompt: buildResultReportPrompt,
   includeTeachingMaterials: true,
+  transformText: normalizeResultReport,
 });
 
 function buildResultReportPrompt(project: SavedProject) {
@@ -79,4 +80,73 @@ ${project.lecturePlanDraft || "아직 저장된 강의 기획서가 없습니다
 
 업로드한 강의자료:
 ${materialList || "업로드한 강의자료가 없습니다."}`;
+}
+
+const reportSectionRules = [
+  { title: "2. 강의 목적", patterns: ["강의 목적", "목적"] },
+  { title: "3. 운영 내용", patterns: ["운영 내용", "운영 개요", "진행 내용", "강의 운영"] },
+  { title: "4. 주요 활동", patterns: ["주요 활동", "활동 내용", "프로그램 활동", "활동"] },
+  { title: "5. 참여자 반응", patterns: ["참여자 반응", "학생 반응", "아이들 반응", "반응"] },
+  { title: "6. 관찰된 강점", patterns: ["관찰된 강점", "강점 포인트", "강점", "관찰 내용"] },
+  { title: "7. 운영 성과", patterns: ["운영 성과", "주요 성과", "성과"] },
+  { title: "8. 보완 및 개선점", patterns: ["보완 및 개선점", "개선점", "보완점", "보완 및 개선"] },
+  { title: "9. 후속 제안", patterns: ["후속 제안", "향후 제안", "다음 제안", "제안"] },
+];
+
+function normalizeResultReport(text: string, project: SavedProject) {
+  const cleanedText = cleanAiReportText(text);
+  const sections = reportSectionRules.map((section) => ({
+    title: section.title,
+    content: extractReportSection(cleanedText, section.patterns) || "추가 확인 필요",
+  }));
+
+  return `[강의 결과보고서]
+
+1. 강의 개요
+- 강의명: ${project.title || "미입력"}
+- 기관명: ${project.organization || "미입력"}
+- 대상: ${project.audience || "미입력"}
+- 일정: ${project.date || "미입력"}
+- 시간: ${project.time || "미입력"}
+- 형태: ${project.format || "미입력"}
+
+${sections.map((section) => `${section.title}\n${section.content}`).join("\n\n")}`;
+}
+
+function cleanAiReportText(text: string) {
+  return text
+    .split("\n")
+    .filter((line) => !/AI\s*강사비서\s*드림|꿈디코치\s*AI\s*강사비서\s*드림|강사비서\s*드림/i.test(line))
+    .map((line) => line.replace(/기관\s*제출용\s*/g, "").trimEnd())
+    .join("\n")
+    .trim();
+}
+
+function extractReportSection(text: string, patterns: string[]) {
+  const lines = text.split("\n");
+  const startIndex = lines.findIndex((line) => matchesReportHeading(line, patterns));
+
+  if (startIndex < 0) {
+    return "";
+  }
+
+  const endIndex = lines.findIndex((line, index) => index > startIndex && matchesAnyReportHeading(line));
+  return lines
+    .slice(startIndex + 1, endIndex < 0 ? undefined : endIndex)
+    .join("\n")
+    .trim();
+}
+
+function matchesAnyReportHeading(line: string) {
+  return reportSectionRules.some((section) => matchesReportHeading(line, section.patterns)) || matchesReportHeading(line, ["강의 개요"]);
+}
+
+function matchesReportHeading(line: string, patterns: string[]) {
+  const normalizedLine = line
+    .replace(/^#+\s*/, "")
+    .replace(/^\d+\s*[.)]\s*/, "")
+    .replace(/[:：]\s*$/, "")
+    .trim();
+
+  return patterns.some((pattern) => normalizedLine === pattern);
 }
