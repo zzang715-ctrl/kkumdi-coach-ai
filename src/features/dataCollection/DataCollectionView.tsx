@@ -306,6 +306,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     event.preventDefault();
     setIsSaving(true);
     setSaveMessage("자료수집 내용을 저장하는 중입니다...");
+    setAiError("");
 
     const nextData = { ...form, summary: form.summary || createSummary(currentProject, form) };
     const nextProject: SavedProject = {
@@ -313,15 +314,23 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
       dataCollection: nextData,
       dataCollectionUpdatedAt: new Date().toISOString(),
     };
-    const nextProjects = updateLocalProject(nextProject);
-    const saveResult = await saveProjectEverywhere(nextProject, nextProjects);
 
-    await waitForSavingFeedback();
-    setProject(nextProject);
-    setForm(nextData);
-    setSaved(true);
-    setSaveMessage(saveResult.message);
-    setIsSaving(false);
+    try {
+      const nextProjects = updateLocalProject(nextProject);
+      const saveResult = await saveProjectEverywhere(nextProject, nextProjects);
+
+      await waitForSavingFeedback();
+      setProject(nextProject);
+      setForm(nextData);
+      setSaved(true);
+      setSaveMessage(saveResult.message);
+    } catch (error) {
+      setSaved(false);
+      setSaveMessage("");
+      setAiError(error instanceof Error ? error.message : "자료수집 내용을 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function handleSaveShortcut(event: KeyboardEvent<HTMLFormElement>) {

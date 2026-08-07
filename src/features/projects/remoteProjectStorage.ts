@@ -111,20 +111,70 @@ export async function deleteRemoteProject(projectId: string) {
 }
 
 export async function saveProjectEverywhere(project: SavedProject, nextProjects: SavedProject[]) {
-  writeLocalProjects(nextProjects);
+  let remoteSaved = false;
+  let remoteError: unknown;
+  let localSaved = false;
+  let localError: unknown;
 
   try {
     await upsertRemoteProject(project);
+    remoteSaved = true;
+  } catch (error) {
+    remoteError = error;
+  }
+
+  try {
+    writeLocalProjects(nextProjects);
+    localSaved = true;
+  } catch (error) {
+    localError = error;
+  }
+
+  if (remoteSaved && localSaved) {
     return {
       remoteSaved: true,
+      localSaved: true,
       message: "브라우저와 Supabase 서버에 함께 저장되었습니다.",
     };
-  } catch {
+  }
+
+  if (remoteSaved) {
+    return {
+      remoteSaved: true,
+      localSaved: false,
+      message: "Supabase 서버에는 저장되었습니다. 브라우저 저장공간이 부족해 이 기기 임시 저장은 건너뛰었습니다.",
+    };
+  }
+
+  if (localSaved) {
     return {
       remoteSaved: false,
+      localSaved: true,
       message: "브라우저에는 저장되었습니다. 서버 저장은 로그인 또는 Supabase 설정이 필요합니다.",
     };
   }
+
+  throw new Error(getSaveFailureMessage(localError, remoteError));
+}
+
+function getSaveFailureMessage(localError: unknown, remoteError: unknown) {
+  if (isQuotaExceededError(localError)) {
+    return "브라우저 저장공간이 부족하고 서버 저장도 실패했습니다. 사진이나 PDF 자료를 줄이거나 로그인 상태를 확인한 뒤 다시 저장해 주세요.";
+  }
+
+  if (remoteError instanceof Error) {
+    return `서버 저장에 실패했습니다. ${remoteError.message}`;
+  }
+
+  return "자료를 저장하지 못했습니다. 로그인 상태와 Supabase 설정을 확인한 뒤 다시 저장해 주세요.";
+}
+
+function isQuotaExceededError(error: unknown) {
+  if (!(error instanceof DOMException)) {
+    return false;
+  }
+
+  return error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED";
 }
 
 async function getCurrentUserId(supabase: SupabaseClient) {

@@ -52,12 +52,18 @@ export function EditProjectForm({ projectId }: EditProjectFormProps) {
       title: form.title.trim() || "이름 없는 프로젝트",
     };
     const nextProjects = updateLocalProject(nextProject);
-    const saveResult = await saveProjectEverywhere(nextProject, nextProjects);
 
-    await waitForSavingFeedback();
-    setProject(nextProject);
-    setMessage(saveResult.message);
-    setIsSaving(false);
+    try {
+      const saveResult = await saveProjectEverywhere(nextProject, nextProjects);
+
+      await waitForSavingFeedback();
+      setProject(nextProject);
+      setMessage(saveResult.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "프로젝트 기본 정보를 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (

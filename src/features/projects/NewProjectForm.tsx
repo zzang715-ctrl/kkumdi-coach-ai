@@ -66,13 +66,19 @@ export function NewProjectForm() {
       createdAt: new Date().toISOString(),
     };
     const nextProjects = [project, ...readLocalProjects()];
-    const saveResult = await saveProjectEverywhere(project, nextProjects);
 
-    await waitForSavingFeedback();
-    setPreview(project);
-    setSaveMessage(saveResult.message);
-    setForm(initialForm);
-    setIsSaving(false);
+    try {
+      const saveResult = await saveProjectEverywhere(project, nextProjects);
+
+      await waitForSavingFeedback();
+      setPreview(project);
+      setSaveMessage(saveResult.message);
+      setForm(initialForm);
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "프로젝트를 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (

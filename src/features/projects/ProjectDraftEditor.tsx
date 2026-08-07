@@ -159,17 +159,26 @@ export function ProjectDraftEditor({
   async function saveDraft() {
     setIsSaving(true);
     setSaveMessage("저장하는 중입니다...");
+    setAiError("");
 
     const nextProject = applyDraft(currentProject, draft);
-    const nextProjects = updateLocalProject(nextProject);
-    const saveResult = await saveProjectEverywhere(nextProject, nextProjects);
 
-    await waitForSavingFeedback();
-    setProject(nextProject);
-    setSaved(true);
-    setSaveMessage(saveResult.message);
-    setCopied(false);
-    setIsSaving(false);
+    try {
+      const nextProjects = updateLocalProject(nextProject);
+      const saveResult = await saveProjectEverywhere(nextProject, nextProjects);
+
+      await waitForSavingFeedback();
+      setProject(nextProject);
+      setSaved(true);
+      setSaveMessage(saveResult.message);
+      setCopied(false);
+    } catch (error) {
+      setSaved(false);
+      setSaveMessage("");
+      setAiError(error instanceof Error ? error.message : "내용을 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function resetDraft() {
