@@ -347,18 +347,16 @@ function buildInstitutionReportHtml(project: SavedProject, photoMode: "print" | 
     th { width: 140px; background: #f9fafb; }
     pre { white-space: pre-wrap; font-family: Arial, "Malgun Gothic", sans-serif; margin: 0; }
     .report-body { border: 1px solid #d1d5db; padding: 18px; min-height: 360px; }
-    .photo-page { display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(3, 1fr); gap: 8mm; min-height: 230mm; page-break-inside: avoid; }
+    .photo-page { border-collapse: collapse; table-layout: fixed; width: 100%; page-break-inside: avoid; }
     .photo-page + .photo-page { page-break-before: always; }
-    .photo-card { display: flex; flex-direction: column; min-height: 0; margin: 0; break-inside: avoid; border: 1px solid #d1d5db; padding: 7px; }
-    .photo-frame { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; border: 1px solid #e5e7eb; background: #ffffff; }
-    .photo-card img { display: block; width: 100%; height: 100%; max-height: 60mm; object-fit: contain; }
-    .caption { margin: 5px 0 0; min-height: 28px; font-size: 12px; line-height: 1.35; color: #374151; }
+    .photo-cell { width: 50%; height: 72mm; border: 1px solid #d1d5db; padding: 4mm; text-align: center; vertical-align: middle; }
+    .photo-cell img { width: 78mm; height: 64mm; object-fit: contain; }
     .empty { border: 1px dashed #d1d5db; color: #6b7280; padding: 16px; }
     .sign { margin-top: 34px; text-align: right; }
     @page { size: A4; margin: 15mm; }
     @media print {
       body { padding: 0; }
-      .photo-page { height: 230mm; }
+      .photo-cell { height: 72mm; }
     }
   </style>
 </head>
@@ -436,20 +434,28 @@ function buildReportPhotosHtml(photos: NonNullable<SavedProject["dataCollection"
   }
 
   return chunkItems(photos, 6)
-    .map(
-      (photoPage, pageIndex) => `<div class="photo-page">${photoPage
-        .map((photo, photoIndex) => {
-          const index = pageIndex * 6 + photoIndex;
-          const image = parseDataUrlImage(photo.dataUrl);
-          const photoSource = photoMode === "word" && image ? `photo-${index + 1}.${image.extension}` : photo.dataUrl;
+    .map((photoPage, pageIndex) => {
+      const sixSlots = Array.from({ length: 6 }, (_, slotIndex) => photoPage[slotIndex] ?? null);
+      const rows = chunkItems(sixSlots, 2)
+        .map(
+          (row, rowIndex) => `<tr>${row
+            .map((photo, slotIndex) => {
+              if (!photo) {
+                return `<td class="photo-cell"></td>`;
+              }
 
-          return `<figure class="photo-card">
-            <div class="photo-frame"><img src="${photoSource}" alt="${escapeHtml(photo.name)}" /></div>
-            <figcaption class="caption">사진 ${index + 1}. ${escapeHtml(photo.note || photo.name || "현장 사진")}</figcaption>
-          </figure>`;
-        })
-        .join("")}</div>`,
-    )
+              const index = pageIndex * 6 + rowIndex * 2 + slotIndex;
+              const image = parseDataUrlImage(photo.dataUrl);
+              const photoSource = photoMode === "word" && image ? `photo-${index + 1}.${image.extension}` : photo.dataUrl;
+
+              return `<td class="photo-cell"><img src="${photoSource}" alt="현장 사진 ${index + 1}" width="295" height="242" /></td>`;
+            })
+            .join("")}</tr>`,
+        )
+        .join("");
+
+      return `<table class="photo-page">${rows}</table>`;
+    })
     .join("");
 }
 
