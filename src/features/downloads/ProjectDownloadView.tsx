@@ -34,11 +34,13 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
   const safeFileName = toSafeFileName(currentProject.title || "kkumdi-project");
   const markdownFileName = `${safeFileName}.md`;
   const wordFileName = `${safeFileName}.doc`;
+  const institutionReportFileName = `${safeFileName}-기관제출용-결과보고서.doc`;
   const checklistSections = getDownloadChecklistSections(currentProject);
   const missingSections = checklistSections.filter((section) => !section.content.trim());
   const savedSections = checklistSections.filter((section) => section.content.trim());
   const completedCount = countCompletedSteps(currentProject);
   const totalCharacters = savedSections.reduce((total, section) => total + section.content.trim().length, 0);
+  const reportPhotoCount = currentProject.dataCollection?.photos?.length ?? 0;
 
   async function copyMarkdown() {
     await navigator.clipboard.writeText(markdown);
@@ -56,6 +58,12 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
     setStatus(`${wordFileName} 다운로드를 시작했습니다. Word에서 열 수 있습니다.`);
   }
 
+  function downloadInstitutionReportWord() {
+    const html = buildInstitutionReportHtml(currentProject);
+    downloadFile(html, institutionReportFileName, "application/msword;charset=utf-8");
+    setStatus(`${institutionReportFileName} 다운로드를 시작했습니다. 기관 제출 전 Word에서 내용을 확인해 주세요.`);
+  }
+
   function printPdf() {
     const printWindow = window.open("", "_blank", "width=900,height=700");
 
@@ -70,6 +78,22 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
     printWindow.focus();
     printWindow.print();
     setStatus("인쇄창이 열렸습니다. 프린터 선택에서 'PDF로 저장'을 선택하면 됩니다.");
+  }
+
+  function printInstitutionReportPdf() {
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+
+    if (!printWindow) {
+      setStatus("팝업이 차단되어 기관 제출용 PDF 인쇄창을 열지 못했습니다. 브라우저 팝업 허용을 확인해 주세요.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildInstitutionReportHtml(currentProject));
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    setStatus("기관 제출용 결과보고서 인쇄창이 열렸습니다. 프린터 선택에서 'PDF로 저장'을 선택하면 됩니다.");
   }
 
   return (
@@ -114,6 +138,36 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
         </div>
 
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-950 lg:col-span-2">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <p className="font-bold">기관 제출용 결과보고서 완성본</p>
+                <p className="mt-1">
+                  기본 정보, 결과보고서 본문, 자료수집 사진 {reportPhotoCount}장을 일정한 양식에 넣어 저장합니다.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={downloadInstitutionReportWord}
+                  className="h-11 rounded-md bg-rose-700 px-4 text-sm font-semibold text-white hover:bg-rose-800"
+                >
+                  보고서 Word 저장
+                </button>
+                <button
+                  type="button"
+                  onClick={printInstitutionReportPdf}
+                  className="h-11 rounded-md border border-rose-300 bg-white px-4 text-sm font-semibold text-rose-800 hover:bg-rose-100"
+                >
+                  보고서 PDF 인쇄
+                </button>
+              </div>
+            </div>
+            {!currentProject.resultReportDraft?.trim() ? (
+              <p className="mt-3 font-semibold text-rose-800">먼저 결과보고서 단계에서 본문을 만들고 저장하면 완성본 품질이 좋아집니다.</p>
+            ) : null}
+          </div>
+
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900">
             <p className="font-bold">다운로드 준비 상태</p>
             <p className="mt-1">저장된 결과물: {savedSections.length}개</p>
@@ -268,6 +322,86 @@ function buildProjectHtml(project: SavedProject) {
   ${sections.map(([title, content]) => `<h2>${escapeHtml(title)}</h2><pre>${escapeHtml(content)}</pre>`).join("")}
 </body>
 </html>`;
+}
+
+function buildInstitutionReportHtml(project: SavedProject) {
+  const reportContent =
+    project.resultReportDraft ||
+    project.dataCollection?.summary ||
+    "아직 저장된 결과보고서가 없습니다. 결과보고서 단계에서 본문을 만든 뒤 다시 다운로드해 주세요.";
+  const photos = project.dataCollection?.photos ?? [];
+
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(project.title || "기관 제출용 결과보고서")}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, "Malgun Gothic", sans-serif; line-height: 1.7; color: #111827; padding: 36px; }
+    .cover { border-bottom: 3px solid #111827; margin-bottom: 24px; padding-bottom: 16px; }
+    .eyebrow { color: #be123c; font-size: 13px; font-weight: 700; margin: 0 0 8px; }
+    h1 { font-size: 30px; margin: 0; }
+    h2 { font-size: 20px; margin: 30px 0 12px; border-bottom: 1px solid #d1d5db; padding-bottom: 8px; }
+    table { border-collapse: collapse; width: 100%; margin: 16px 0 26px; }
+    th, td { border: 1px solid #d1d5db; padding: 10px 12px; text-align: left; vertical-align: top; }
+    th { width: 140px; background: #f9fafb; }
+    pre { white-space: pre-wrap; font-family: Arial, "Malgun Gothic", sans-serif; margin: 0; }
+    .report-body { border: 1px solid #d1d5db; padding: 18px; min-height: 360px; }
+    .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .photo-card { break-inside: avoid; border: 1px solid #d1d5db; padding: 10px; }
+    .photo-card img { display: block; width: 100%; max-height: 260px; object-fit: contain; border: 1px solid #e5e7eb; }
+    .caption { margin: 8px 0 0; font-size: 13px; color: #374151; }
+    .empty { border: 1px dashed #d1d5db; color: #6b7280; padding: 16px; }
+    .sign { margin-top: 34px; text-align: right; }
+    @media print {
+      body { padding: 18px; }
+      .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <p class="eyebrow">꿈디코치 AI 강사비서</p>
+    <h1>기관 제출용 강의 결과보고서</h1>
+  </section>
+
+  <h2>1. 프로젝트 기본 정보</h2>
+  <table>
+    <tr><th>강의명</th><td>${escapeHtml(project.title || "미입력")}</td></tr>
+    <tr><th>기관명</th><td>${escapeHtml(project.organization || "미입력")}</td></tr>
+    <tr><th>대상</th><td>${escapeHtml(project.audience || "미입력")}</td></tr>
+    <tr><th>일정</th><td>${escapeHtml(project.date || "미입력")}</td></tr>
+    <tr><th>시간</th><td>${escapeHtml(project.time || "미입력")}</td></tr>
+    <tr><th>형태</th><td>${escapeHtml(project.format || "미입력")}</td></tr>
+    <tr><th>목적</th><td>${escapeHtml(project.purpose || "미입력")}</td></tr>
+    <tr><th>특이사항</th><td>${escapeHtml(project.notes || "미입력")}</td></tr>
+  </table>
+
+  <h2>2. 결과보고서 본문</h2>
+  <div class="report-body"><pre>${escapeHtml(reportContent)}</pre></div>
+
+  <h2>3. 현장 사진 자료</h2>
+  ${buildReportPhotosHtml(photos)}
+
+  <div class="sign">작성일: ${escapeHtml(new Date().toLocaleDateString("ko-KR"))}</div>
+</body>
+</html>`;
+}
+
+function buildReportPhotosHtml(photos: NonNullable<SavedProject["dataCollection"]>["photos"]) {
+  if (!photos?.length) {
+    return `<div class="empty">자료수집 단계에 첨부된 사진이 없습니다.</div>`;
+  }
+
+  return `<div class="photo-grid">${photos
+    .map(
+      (photo, index) => `<figure class="photo-card">
+        <img src="${photo.dataUrl}" alt="${escapeHtml(photo.name)}" />
+        <figcaption class="caption">사진 ${index + 1}. ${escapeHtml(photo.note || photo.name || "현장 사진")}</figcaption>
+      </figure>`,
+    )
+    .join("")}</div>`;
 }
 
 function downloadFile(content: string, fileName: string, type: string) {
