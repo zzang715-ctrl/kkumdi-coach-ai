@@ -326,8 +326,7 @@ function buildProjectHtml(project: SavedProject) {
 
 function buildInstitutionReportHtml(project: SavedProject, photoMode: "print" | "word") {
   const reportContent =
-    project.resultReportDraft ||
-    project.dataCollection?.summary ||
+    cleanReportContent(project.resultReportDraft || project.dataCollection?.summary || "") ||
     "아직 저장된 결과보고서가 없습니다. 결과보고서 단계에서 본문을 만든 뒤 다시 다운로드해 주세요.";
   const photos = project.dataCollection?.photos ?? [];
 
@@ -342,20 +341,24 @@ function buildInstitutionReportHtml(project: SavedProject, photoMode: "print" | 
     .cover { border-bottom: 3px solid #111827; margin-bottom: 24px; padding-bottom: 16px; }
     h1 { font-size: 30px; margin: 0; }
     h2 { font-size: 20px; margin: 30px 0 12px; border-bottom: 1px solid #d1d5db; padding-bottom: 8px; }
+    .photo-section-title { page-break-before: always; }
     table { border-collapse: collapse; width: 100%; margin: 16px 0 26px; }
     th, td { border: 1px solid #d1d5db; padding: 10px 12px; text-align: left; vertical-align: top; }
     th { width: 140px; background: #f9fafb; }
     pre { white-space: pre-wrap; font-family: Arial, "Malgun Gothic", sans-serif; margin: 0; }
     .report-body { border: 1px solid #d1d5db; padding: 18px; min-height: 360px; }
-    .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-    .photo-card { break-inside: avoid; border: 1px solid #d1d5db; padding: 10px; }
-    .photo-card img { display: block; width: 100%; max-height: 260px; object-fit: contain; border: 1px solid #e5e7eb; }
-    .caption { margin: 8px 0 0; font-size: 13px; color: #374151; }
+    .photo-page { display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(3, 1fr); gap: 8mm; min-height: 230mm; page-break-inside: avoid; }
+    .photo-page + .photo-page { page-break-before: always; }
+    .photo-card { display: flex; flex-direction: column; min-height: 0; margin: 0; break-inside: avoid; border: 1px solid #d1d5db; padding: 7px; }
+    .photo-frame { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; border: 1px solid #e5e7eb; background: #ffffff; }
+    .photo-card img { display: block; width: 100%; height: 100%; max-height: 60mm; object-fit: contain; }
+    .caption { margin: 5px 0 0; min-height: 28px; font-size: 12px; line-height: 1.35; color: #374151; }
     .empty { border: 1px dashed #d1d5db; color: #6b7280; padding: 16px; }
     .sign { margin-top: 34px; text-align: right; }
+    @page { size: A4; margin: 15mm; }
     @media print {
-      body { padding: 18px; }
-      .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      body { padding: 0; }
+      .photo-page { height: 230mm; }
     }
   </style>
 </head>
@@ -378,7 +381,7 @@ function buildInstitutionReportHtml(project: SavedProject, photoMode: "print" | 
   <h2>2. 결과보고서 본문</h2>
   <div class="report-body"><pre>${escapeHtml(reportContent)}</pre></div>
 
-  <h2>3. 현장 사진 자료</h2>
+  <h2 class="photo-section-title">3. 현장 사진 자료</h2>
   ${buildReportPhotosHtml(photos, photoMode)}
 
   <div class="sign">작성일: ${escapeHtml(new Date().toLocaleDateString("ko-KR"))}</div>
@@ -432,17 +435,41 @@ function buildReportPhotosHtml(photos: NonNullable<SavedProject["dataCollection"
     return `<div class="empty">자료수집 단계에 첨부된 사진이 없습니다.</div>`;
   }
 
-  return `<div class="photo-grid">${photos
-    .map((photo, index) => {
-      const image = parseDataUrlImage(photo.dataUrl);
-      const photoSource = photoMode === "word" && image ? `photo-${index + 1}.${image.extension}` : photo.dataUrl;
+  return chunkItems(photos, 6)
+    .map(
+      (photoPage, pageIndex) => `<div class="photo-page">${photoPage
+        .map((photo, photoIndex) => {
+          const index = pageIndex * 6 + photoIndex;
+          const image = parseDataUrlImage(photo.dataUrl);
+          const photoSource = photoMode === "word" && image ? `photo-${index + 1}.${image.extension}` : photo.dataUrl;
 
-      return `<figure class="photo-card">
-        <img src="${photoSource}" alt="${escapeHtml(photo.name)}" />
-        <figcaption class="caption">사진 ${index + 1}. ${escapeHtml(photo.note || photo.name || "현장 사진")}</figcaption>
-      </figure>`;
-    })
-    .join("")}</div>`;
+          return `<figure class="photo-card">
+            <div class="photo-frame"><img src="${photoSource}" alt="${escapeHtml(photo.name)}" /></div>
+            <figcaption class="caption">사진 ${index + 1}. ${escapeHtml(photo.note || photo.name || "현장 사진")}</figcaption>
+          </figure>`;
+        })
+        .join("")}</div>`,
+    )
+    .join("");
+}
+
+function cleanReportContent(content: string) {
+  return content
+    .split("\n")
+    .filter((line) => !/AI\s*강사비서\s*드림|꿈디코치\s*AI\s*강사비서\s*드림|강사비서\s*드림/i.test(line))
+    .map((line) => line.replace(/기관\s*제출용\s*/g, ""))
+    .join("\n")
+    .trim();
+}
+
+function chunkItems<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 function parseDataUrlImage(dataUrl: string) {
