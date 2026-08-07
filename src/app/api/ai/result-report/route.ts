@@ -18,12 +18,14 @@ function buildResultReportPrompt(project: SavedProject) {
 조건:
 - 한국어로 작성
 - 기관 담당자가 읽기 쉬운 정중하고 명확한 문체 사용
+- 모든 설명 문장은 존댓말로 작성하고, 문장 끝은 주로 "~습니다", "~합니다", "~되었습니다", "~필요합니다" 형태로 마무리
+- 반말, 명령조, 홍보 문구, 구어체 표현은 사용하지 않기
 - 반드시 아래 "고정 양식"의 제목, 번호, 순서를 그대로 사용
 - 항목 제목을 바꾸거나 새 큰 항목을 추가하지 않기
 - 각 항목은 2~5문장 또는 2~5개 불릿으로 작성
 - 자료수집 내용이 있으면 구체적으로 반영
 - 업로드된 강의자료가 있으면 강의 목적, 활동 흐름, 핵심 내용, 준비물 정보를 보고서에 반영
-- 없는 정보는 지어내지 말고 "추가 확인 필요"라고 표시
+- 없는 정보는 지어내지 말고 "추가 확인이 필요합니다."라고 표시
 - 블로그 글처럼 과장하지 말고 공식 보고서에 어울리게 작성
 - 마지막에 "AI 강사비서 드림", "꿈디코치 AI 강사비서 드림" 같은 서명 문구를 넣지 않기
 
@@ -97,7 +99,7 @@ function normalizeResultReport(text: string, project: SavedProject) {
   const cleanedText = cleanAiReportText(text);
   const sections = reportSectionRules.map((section) => ({
     title: section.title,
-    content: extractReportSection(cleanedText, section.patterns) || "추가 확인 필요",
+    content: extractReportSection(cleanedText, section.patterns) || "추가 확인이 필요합니다.",
   }));
 
   return `[강의 결과보고서]
