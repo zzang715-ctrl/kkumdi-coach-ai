@@ -34,7 +34,7 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
   const safeFileName = toSafeFileName(currentProject.title || "kkumdi-project");
   const markdownFileName = `${safeFileName}.md`;
   const wordFileName = `${safeFileName}.doc`;
-  const reportFileName = `${safeFileName}-결과보고서.doc`;
+  const reportFileName = `${safeFileName}-결과보고서.docx`;
   const checklistSections = getDownloadChecklistSections(currentProject);
   const missingSections = checklistSections.filter((section) => !section.content.trim());
   const savedSections = checklistSections.filter((section) => section.content.trim());
@@ -58,9 +58,10 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
     setStatus(`${wordFileName} 다운로드를 시작했습니다. Word에서 열 수 있습니다.`);
   }
 
-  function downloadInstitutionReportWord() {
-    const documentContent = buildInstitutionReportWordDocument(currentProject);
-    downloadRawFile(documentContent, reportFileName, "application/msword;charset=utf-8");
+  async function downloadInstitutionReportWord() {
+    setStatus("사진을 Word 문서에 넣는 중입니다. 잠시만 기다려 주세요...");
+    const documentBlob = await buildInstitutionReportDocx(currentProject);
+    downloadBlob(documentBlob, reportFileName);
     setStatus(`${reportFileName} 다운로드를 시작했습니다. Word에서 사진과 내용을 확인해 주세요.`);
   }
 
@@ -387,45 +388,59 @@ function buildInstitutionReportHtml(project: SavedProject, photoMode: "print" | 
 </html>`;
 }
 
-function buildInstitutionReportWordDocument(project: SavedProject) {
-  const boundary = `----kkumdi-report-${Date.now()}`;
+async function buildInstitutionReportDocx(project: SavedProject) {
   const photos = project.dataCollection?.photos ?? [];
-  const html = buildInstitutionReportHtml(project, "word");
-  const imageParts = photos
-    .map((photo, index) => {
+  const images = await Promise.all(
+    photos.map(async (photo, index) => {
       const image = parseDataUrlImage(photo.dataUrl);
 
       if (!image) {
-        return "";
+        return null;
       }
 
-      return [
-        `--${boundary}`,
-        `Content-Type: ${image.mimeType}`,
-        "Content-Transfer-Encoding: base64",
-        `Content-Location: photo-${index + 1}.${image.extension}`,
-        "",
-        image.base64,
-        "",
-      ].join("\r\n");
-    })
-    .filter(Boolean)
-    .join("");
+      const size = await readImageSize(photo.dataUrl);
+      const fit = fitImageToBox(size.width, size.height, 2500000, 1750000);
 
-  return [
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/related; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/html; charset=\"utf-8\"",
-    "Content-Transfer-Encoding: 8bit",
-    "Content-Location: report.html",
-    "",
-    html,
-    "",
-    imageParts,
-    `--${boundary}--`,
-  ].join("\r\n");
+      return {
+        relationshipId: `rId${index + 1}`,
+        fileName: `photo-${index + 1}.${image.extension}`,
+        contentType: image.mimeType,
+        bytes: base64ToUint8Array(image.base64),
+        widthEmu: fit.widthEmu,
+        heightEmu: fit.heightEmu,
+      };
+    })
+  );
+  const validImages = images.filter((image): image is NonNullable<typeof image> => Boolean(image));
+  const files: ZipFile[] = [
+    {
+      path: "[Content_Types].xml",
+      content: textToUint8Array(buildDocxContentTypes(validImages)),
+    },
+    {
+      path: "_rels/.rels",
+      content: textToUint8Array(buildDocxRootRelationships()),
+    },
+    {
+      path: "word/document.xml",
+      content: textToUint8Array(buildDocxDocument(project, validImages)),
+    },
+    {
+      path: "word/_rels/document.xml.rels",
+      content: textToUint8Array(buildDocxDocumentRelationships(validImages)),
+    },
+  ];
+
+  validImages.forEach((image) => {
+    files.push({
+      path: `word/media/${image.fileName}`,
+      content: image.bytes,
+    });
+  });
+
+  return new Blob([createZip(files)], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
 }
 
 function buildReportPhotosHtml(photos: NonNullable<SavedProject["dataCollection"]>["photos"], photoMode: "print" | "word") {
@@ -495,6 +510,330 @@ function parseDataUrlImage(dataUrl: string) {
   };
 }
 
+type DocxImage = {
+  relationshipId: string;
+  fileName: string;
+  contentType: string;
+  bytes: Uint8Array;
+  widthEmu: number;
+  heightEmu: number;
+};
+
+type ZipFile = {
+  path: string;
+  content: Uint8Array;
+};
+
+function buildDocxDocument(project: SavedProject, images: DocxImage[]) {
+  const reportContent =
+    cleanReportContent(project.resultReportDraft || project.dataCollection?.summary || "") ||
+    "아직 저장된 결과보고서가 없습니다. 결과보고서 단계에서 본문을 만든 뒤 다시 다운로드해 주세요.";
+  const infoRows = [
+    ["강의명", project.title || "미입력"],
+    ["기관명", project.organization || "미입력"],
+    ["대상", project.audience || "미입력"],
+    ["일정", project.date || "미입력"],
+    ["시간", project.time || "미입력"],
+    ["형태", project.format || "미입력"],
+    ["목적", project.purpose || "미입력"],
+  ];
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" mc:Ignorable="w14 wp14">
+  <w:body>
+    ${docxHeading("강의 결과보고서", 1)}
+    ${docxHeading("1. 프로젝트 기본 정보", 2)}
+    ${docxInfoTable(infoRows)}
+    ${docxHeading("2. 결과보고서 본문", 2)}
+    ${textToDocxParagraphs(reportContent)}
+    ${docxPageBreak()}
+    ${docxHeading("3. 현장 사진 자료", 2)}
+    ${images.length ? docxPhotoTables(images) : docxParagraph("자료수집 단계에 첨부된 사진이 없습니다.")}
+    ${docxParagraph(`작성일: ${new Date().toLocaleDateString("ko-KR")}`, "right")}
+    <w:sectPr>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="850" w:right="850" w:bottom="850" w:left="850" w:header="708" w:footer="708" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+}
+
+function docxInfoTable(rows: string[][]) {
+  return `<w:tbl>
+    <w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>${docxBorders()}</w:tblBorders></w:tblPr>
+    ${rows
+      .map(
+        ([label, value]) => `<w:tr>
+          <w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/><w:shd w:fill="F8FAFC"/></w:tcPr>${docxParagraph(label, undefined, true)}</w:tc>
+          <w:tc><w:tcPr><w:tcW w:w="7600" w:type="dxa"/></w:tcPr>${docxParagraph(value)}</w:tc>
+        </w:tr>`,
+      )
+      .join("")}
+  </w:tbl>`;
+}
+
+function docxPhotoTables(images: DocxImage[]) {
+  return chunkItems(images, 6)
+    .map((pageImages, pageIndex) => {
+      const cells = Array.from({ length: 6 }, (_, index) => pageImages[index] ?? null);
+      const rows = chunkItems(cells, 2)
+        .map(
+          (row) => `<w:tr>
+            <w:trPr><w:trHeight w:val="3300" w:hRule="exact"/></w:trPr>
+            ${row.map((image) => docxPhotoCell(image)).join("")}
+          </w:tr>`,
+        )
+        .join("");
+      const pageBreak = pageIndex === 0 ? "" : docxPageBreak();
+
+      return `${pageBreak}<w:tbl>
+        <w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblLayout w:type="fixed"/><w:tblBorders>${docxBorders()}</w:tblBorders></w:tblPr>
+        <w:tblGrid><w:gridCol w:w="4700"/><w:gridCol w:w="4700"/></w:tblGrid>
+        ${rows}
+      </w:tbl>`;
+    })
+    .join("");
+}
+
+function docxPhotoCell(image: DocxImage | null) {
+  return `<w:tc>
+    <w:tcPr><w:tcW w:w="4700" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>
+    ${image ? docxImageParagraph(image) : docxParagraph("")}
+  </w:tc>`;
+}
+
+function docxImageParagraph(image: DocxImage) {
+  return `<w:p>
+    <w:pPr><w:jc w:val="center"/></w:pPr>
+    <w:r>
+      <w:drawing>
+        <wp:inline distT="0" distB="0" distL="0" distR="0">
+          <wp:extent cx="${image.widthEmu}" cy="${image.heightEmu}"/>
+          <wp:docPr id="${image.relationshipId.replace("rId", "")}" name="${escapeXml(image.fileName)}"/>
+          <a:graphic>
+            <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+              <pic:pic>
+                <pic:nvPicPr><pic:cNvPr id="0" name="${escapeXml(image.fileName)}"/><pic:cNvPicPr/></pic:nvPicPr>
+                <pic:blipFill><a:blip r:embed="${image.relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+                <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${image.widthEmu}" cy="${image.heightEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+              </pic:pic>
+            </a:graphicData>
+          </a:graphic>
+        </wp:inline>
+      </w:drawing>
+    </w:r>
+  </w:p>`;
+}
+
+function textToDocxParagraphs(content: string) {
+  return content
+    .split("\n")
+    .map((line) => docxParagraph(line || " "))
+    .join("");
+}
+
+function docxHeading(text: string, level: 1 | 2) {
+  const size = level === 1 ? "40" : "28";
+  return `<w:p><w:pPr><w:spacing w:before="180" w:after="160"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="${size}"/></w:rPr><w:t>${escapeXml(text)}</w:t></w:r></w:p>`;
+}
+
+function docxParagraph(text: string, align?: "right", bold = false) {
+  return `<w:p>
+    <w:pPr>${align ? `<w:jc w:val="${align}"/>` : ""}<w:spacing w:after="80"/></w:pPr>
+    <w:r>${bold ? "<w:rPr><w:b/></w:rPr>" : ""}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>
+  </w:p>`;
+}
+
+function docxPageBreak() {
+  return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+}
+
+function docxBorders() {
+  return `<w:top w:val="single" w:sz="4" w:space="0" w:color="D1D5DB"/><w:left w:val="single" w:sz="4" w:space="0" w:color="D1D5DB"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="D1D5DB"/><w:right w:val="single" w:sz="4" w:space="0" w:color="D1D5DB"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="D1D5DB"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="D1D5DB"/>`;
+}
+
+function buildDocxContentTypes(images: DocxImage[]) {
+  const imageDefaults = Array.from(new Map(images.map((image) => [image.fileName.split(".").pop() || "jpg", image.contentType])))
+    .map(([extension, contentType]) => `<Default Extension="${escapeXml(extension)}" ContentType="${escapeXml(contentType)}"/>`)
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  ${imageDefaults}
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+}
+
+function buildDocxRootRelationships() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+}
+
+function buildDocxDocumentRelationships(images: DocxImage[]) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${images
+    .map(
+      (image) =>
+        `<Relationship Id="${image.relationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${escapeXml(image.fileName)}"/>`,
+    )
+    .join("")}
+</Relationships>`;
+}
+
+function readImageSize(dataUrl: string) {
+  return new Promise<{ width: number; height: number }>((resolve) => {
+    const image = new window.Image();
+
+    image.onload = () => resolve({ width: image.naturalWidth || image.width || 1, height: image.naturalHeight || image.height || 1 });
+    image.onerror = () => resolve({ width: 4, height: 3 });
+    image.src = dataUrl;
+  });
+}
+
+function fitImageToBox(width: number, height: number, maxWidthEmu: number, maxHeightEmu: number) {
+  const ratio = Math.min(maxWidthEmu / Math.max(width, 1), maxHeightEmu / Math.max(height, 1));
+  return {
+    widthEmu: Math.max(1, Math.round(width * ratio)),
+    heightEmu: Math.max(1, Math.round(height * ratio)),
+  };
+}
+
+function createZip(files: ZipFile[]) {
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+
+  files.forEach((file) => {
+    const name = textToUint8Array(file.path);
+    const crc = crc32(file.content);
+    const localHeader = concatUint8Arrays([
+      uint32(0x04034b50),
+      uint16(20),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint32(crc),
+      uint32(file.content.length),
+      uint32(file.content.length),
+      uint16(name.length),
+      uint16(0),
+      name,
+    ]);
+    localParts.push(localHeader, file.content);
+
+    const centralHeader = concatUint8Arrays([
+      uint32(0x02014b50),
+      uint16(20),
+      uint16(20),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint32(crc),
+      uint32(file.content.length),
+      uint32(file.content.length),
+      uint16(name.length),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint32(0),
+      uint32(offset),
+      name,
+    ]);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + file.content.length;
+  });
+
+  const centralDirectory = concatUint8Arrays(centralParts);
+  const localFiles = concatUint8Arrays(localParts);
+  const end = concatUint8Arrays([
+    uint32(0x06054b50),
+    uint16(0),
+    uint16(0),
+    uint16(files.length),
+    uint16(files.length),
+    uint32(centralDirectory.length),
+    uint32(localFiles.length),
+    uint16(0),
+  ]);
+
+  return concatUint8Arrays([localFiles, centralDirectory, end]);
+}
+
+function textToUint8Array(text: string) {
+  return new TextEncoder().encode(text);
+}
+
+function base64ToUint8Array(base64: string) {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff;
+
+  for (const byte of bytes) {
+    crc ^= byte;
+
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    }
+  }
+
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function uint16(value: number) {
+  const bytes = new Uint8Array(2);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(0, value, true);
+  return bytes;
+}
+
+function uint32(value: number) {
+  const bytes = new Uint8Array(4);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, value, true);
+  return bytes;
+}
+
+function concatUint8Arrays(parts: Uint8Array[]) {
+  const totalLength = parts.reduce((total, part) => total + part.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+
+  parts.forEach((part) => {
+    result.set(part, offset);
+    offset += part.length;
+  });
+
+  return result;
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 function downloadFile(content: string, fileName: string, type: string) {
   const contentWithBom = content.startsWith("\ufeff") ? content : `\ufeff${content}`;
   downloadRawFile(contentWithBom, fileName, type);
@@ -519,6 +858,10 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function escapeXml(value: string) {
+  return escapeHtml(value);
 }
 
 function toSafeFileName(value: string) {
