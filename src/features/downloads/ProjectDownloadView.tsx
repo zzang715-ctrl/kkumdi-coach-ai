@@ -34,7 +34,7 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
   const safeFileName = toSafeFileName(currentProject.title || "kkumdi-project");
   const markdownFileName = `${safeFileName}.md`;
   const wordFileName = `${safeFileName}.doc`;
-  const institutionReportFileName = `${safeFileName}-기관제출용-결과보고서.doc`;
+  const reportFileName = `${safeFileName}-결과보고서.doc`;
   const checklistSections = getDownloadChecklistSections(currentProject);
   const missingSections = checklistSections.filter((section) => !section.content.trim());
   const savedSections = checklistSections.filter((section) => section.content.trim());
@@ -59,9 +59,9 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
   }
 
   function downloadInstitutionReportWord() {
-    const html = buildInstitutionReportHtml(currentProject);
-    downloadFile(html, institutionReportFileName, "application/msword;charset=utf-8");
-    setStatus(`${institutionReportFileName} 다운로드를 시작했습니다. 기관 제출 전 Word에서 내용을 확인해 주세요.`);
+    const documentContent = buildInstitutionReportWordDocument(currentProject);
+    downloadRawFile(documentContent, reportFileName, "application/msword;charset=utf-8");
+    setStatus(`${reportFileName} 다운로드를 시작했습니다. Word에서 사진과 내용을 확인해 주세요.`);
   }
 
   function printPdf() {
@@ -84,16 +84,18 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
     const printWindow = window.open("", "_blank", "width=900,height=700");
 
     if (!printWindow) {
-      setStatus("팝업이 차단되어 기관 제출용 PDF 인쇄창을 열지 못했습니다. 브라우저 팝업 허용을 확인해 주세요.");
+      setStatus("팝업이 차단되어 PDF 인쇄창을 열지 못했습니다. 브라우저 팝업 허용을 확인해 주세요.");
       return;
     }
 
     printWindow.document.open();
-    printWindow.document.write(buildInstitutionReportHtml(currentProject));
+    printWindow.document.write(buildInstitutionReportHtml(currentProject, "print"));
     printWindow.document.close();
     printWindow.focus();
-    printWindow.print();
-    setStatus("기관 제출용 결과보고서 인쇄창이 열렸습니다. 프린터 선택에서 'PDF로 저장'을 선택하면 됩니다.");
+    window.setTimeout(() => {
+      printWindow.print();
+    }, 800);
+    setStatus("결과보고서 인쇄창이 열렸습니다. 프린터 선택에서 'PDF로 저장'을 선택하면 됩니다.");
   }
 
   return (
@@ -141,7 +143,7 @@ export function ProjectDownloadView({ projectId }: ProjectDownloadViewProps) {
           <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-950 lg:col-span-2">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <p className="font-bold">기관 제출용 결과보고서 완성본</p>
+                <p className="font-bold">결과보고서 완성본</p>
                 <p className="mt-1">
                   기본 정보, 결과보고서 본문, 자료수집 사진 {reportPhotoCount}장을 일정한 양식에 넣어 저장합니다.
                 </p>
@@ -276,7 +278,6 @@ function buildProjectMarkdown(project: SavedProject) {
 - 시간: ${project.time || "미입력"}
 - 형태: ${project.format || "미입력"}
 - 목적: ${project.purpose || "미입력"}
-- 특이사항: ${project.notes || "미입력"}
 
 ${downloadSections
   .map((section) => {
@@ -317,14 +318,13 @@ function buildProjectHtml(project: SavedProject) {
     <tr><th>시간</th><td>${escapeHtml(project.time || "미입력")}</td></tr>
     <tr><th>형태</th><td>${escapeHtml(project.format || "미입력")}</td></tr>
     <tr><th>목적</th><td>${escapeHtml(project.purpose || "미입력")}</td></tr>
-    <tr><th>특이사항</th><td>${escapeHtml(project.notes || "미입력")}</td></tr>
   </table>
   ${sections.map(([title, content]) => `<h2>${escapeHtml(title)}</h2><pre>${escapeHtml(content)}</pre>`).join("")}
 </body>
 </html>`;
 }
 
-function buildInstitutionReportHtml(project: SavedProject) {
+function buildInstitutionReportHtml(project: SavedProject, photoMode: "print" | "word") {
   const reportContent =
     project.resultReportDraft ||
     project.dataCollection?.summary ||
@@ -335,12 +335,11 @@ function buildInstitutionReportHtml(project: SavedProject) {
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(project.title || "기관 제출용 결과보고서")}</title>
+  <title>${escapeHtml(project.title || "강의 결과보고서")}</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: Arial, "Malgun Gothic", sans-serif; line-height: 1.7; color: #111827; padding: 36px; }
     .cover { border-bottom: 3px solid #111827; margin-bottom: 24px; padding-bottom: 16px; }
-    .eyebrow { color: #be123c; font-size: 13px; font-weight: 700; margin: 0 0 8px; }
     h1 { font-size: 30px; margin: 0; }
     h2 { font-size: 20px; margin: 30px 0 12px; border-bottom: 1px solid #d1d5db; padding-bottom: 8px; }
     table { border-collapse: collapse; width: 100%; margin: 16px 0 26px; }
@@ -362,8 +361,7 @@ function buildInstitutionReportHtml(project: SavedProject) {
 </head>
 <body>
   <section class="cover">
-    <p class="eyebrow">꿈디코치 AI 강사비서</p>
-    <h1>기관 제출용 강의 결과보고서</h1>
+    <h1>강의 결과보고서</h1>
   </section>
 
   <h2>1. 프로젝트 기본 정보</h2>
@@ -375,38 +373,102 @@ function buildInstitutionReportHtml(project: SavedProject) {
     <tr><th>시간</th><td>${escapeHtml(project.time || "미입력")}</td></tr>
     <tr><th>형태</th><td>${escapeHtml(project.format || "미입력")}</td></tr>
     <tr><th>목적</th><td>${escapeHtml(project.purpose || "미입력")}</td></tr>
-    <tr><th>특이사항</th><td>${escapeHtml(project.notes || "미입력")}</td></tr>
   </table>
 
   <h2>2. 결과보고서 본문</h2>
   <div class="report-body"><pre>${escapeHtml(reportContent)}</pre></div>
 
   <h2>3. 현장 사진 자료</h2>
-  ${buildReportPhotosHtml(photos)}
+  ${buildReportPhotosHtml(photos, photoMode)}
 
   <div class="sign">작성일: ${escapeHtml(new Date().toLocaleDateString("ko-KR"))}</div>
 </body>
 </html>`;
 }
 
-function buildReportPhotosHtml(photos: NonNullable<SavedProject["dataCollection"]>["photos"]) {
+function buildInstitutionReportWordDocument(project: SavedProject) {
+  const boundary = `----kkumdi-report-${Date.now()}`;
+  const photos = project.dataCollection?.photos ?? [];
+  const html = buildInstitutionReportHtml(project, "word");
+  const imageParts = photos
+    .map((photo, index) => {
+      const image = parseDataUrlImage(photo.dataUrl);
+
+      if (!image) {
+        return "";
+      }
+
+      return [
+        `--${boundary}`,
+        `Content-Type: ${image.mimeType}`,
+        "Content-Transfer-Encoding: base64",
+        `Content-Location: photo-${index + 1}.${image.extension}`,
+        "",
+        image.base64,
+        "",
+      ].join("\r\n");
+    })
+    .filter(Boolean)
+    .join("");
+
+  return [
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/related; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=\"utf-8\"",
+    "Content-Transfer-Encoding: 8bit",
+    "Content-Location: report.html",
+    "",
+    html,
+    "",
+    imageParts,
+    `--${boundary}--`,
+  ].join("\r\n");
+}
+
+function buildReportPhotosHtml(photos: NonNullable<SavedProject["dataCollection"]>["photos"], photoMode: "print" | "word") {
   if (!photos?.length) {
     return `<div class="empty">자료수집 단계에 첨부된 사진이 없습니다.</div>`;
   }
 
   return `<div class="photo-grid">${photos
-    .map(
-      (photo, index) => `<figure class="photo-card">
-        <img src="${photo.dataUrl}" alt="${escapeHtml(photo.name)}" />
+    .map((photo, index) => {
+      const image = parseDataUrlImage(photo.dataUrl);
+      const photoSource = photoMode === "word" && image ? `photo-${index + 1}.${image.extension}` : photo.dataUrl;
+
+      return `<figure class="photo-card">
+        <img src="${photoSource}" alt="${escapeHtml(photo.name)}" />
         <figcaption class="caption">사진 ${index + 1}. ${escapeHtml(photo.note || photo.name || "현장 사진")}</figcaption>
-      </figure>`,
-    )
+      </figure>`;
+    })
     .join("")}</div>`;
+}
+
+function parseDataUrlImage(dataUrl: string) {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const mimeType = match[1];
+  const extension = mimeType.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
+
+  return {
+    mimeType,
+    extension,
+    base64: match[2],
+  };
 }
 
 function downloadFile(content: string, fileName: string, type: string) {
   const contentWithBom = content.startsWith("\ufeff") ? content : `\ufeff${content}`;
-  const blob = new Blob([contentWithBom], { type });
+  downloadRawFile(contentWithBom, fileName, type);
+}
+
+function downloadRawFile(content: string, fileName: string, type: string) {
+  const blob = new Blob([content], { type });
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
