@@ -28,10 +28,11 @@ type PhotoAnalysisResponse = {
 
 const maxPhotoCount = 6;
 const maxOriginalPhotoSize = 8 * 1024 * 1024;
-const compressedPhotoMaxSide = 1280;
-const compressedPhotoQuality = 0.72;
+const compressedPhotoMaxSide = 800;
+const compressedPhotoQuality = 0.55;
 const maxMaterialCount = 4;
-const maxReadableMaterialSize = 4 * 1024 * 1024;
+const maxReadableMaterialSize = 700 * 1024;
+const maxStoredMaterialDataUrlLength = 900_000;
 const materialAccept = ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md";
 
 const emptyDataCollection: DataCollectionForm = {
@@ -188,7 +189,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     });
 
     if (validFiles.length < selectedFiles.length) {
-      setPhotoMessage("PDF, TXT, MD는 파일 하나가 4MB 이하여야 합니다. PPT와 Word는 파일명과 메모만 저장합니다.");
+      setPhotoMessage("PDF, TXT, MD는 파일 하나가 700KB 이하여야 합니다. PPT와 Word는 파일명과 메모만 저장합니다.");
     }
 
     if (validFiles.length === 0) {
@@ -308,14 +309,16 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     setSaveMessage("자료수집 내용을 저장하는 중입니다...");
     setAiError("");
 
-    const nextData = { ...form, summary: form.summary || createSummary(currentProject, form) };
-    const nextProject: SavedProject = {
-      ...currentProject,
-      dataCollection: nextData,
-      dataCollectionUpdatedAt: new Date().toISOString(),
-    };
-
     try {
+      const nextData = await prepareDataCollectionForStorage({
+        ...form,
+        summary: form.summary || createSummary(currentProject, form),
+      });
+      const nextProject: SavedProject = {
+        ...currentProject,
+        dataCollection: nextData,
+        dataCollectionUpdatedAt: new Date().toISOString(),
+      };
       const nextProjects = updateLocalProject(nextProject);
       const saveResult = await saveProjectEverywhere(nextProject, nextProjects);
 
@@ -327,7 +330,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
     } catch (error) {
       setSaved(false);
       setSaveMessage("");
-      setAiError(error instanceof Error ? error.message : "자료수집 내용을 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+      setAiError(error instanceof Error ? error.message : "자료수집 내용을 저장하지 못했습니다. 사진이나 자료 용량을 줄인 뒤 다시 시도해 주세요.");
     } finally {
       setIsSaving(false);
     }
@@ -541,7 +544,7 @@ export function DataCollectionView({ projectId }: DataCollectionViewProps) {
           </div>
 
           <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
-            PDF, PPT, PPTX, DOC, DOCX, TXT, MD 파일을 올릴 수 있습니다. AI가 본문까지 안정적으로 읽는 자료는 PDF, TXT, MD입니다.
+            PDF, PPT, PPTX, DOC, DOCX, TXT, MD 파일을 올릴 수 있습니다. AI가 본문까지 안정적으로 읽는 자료는 700KB 이하의 PDF, TXT, MD입니다.
             PPT나 Word 자료는 저장공간 보호를 위해 파일명과 메모를 우선 참고하므로, 정확한 분석이 필요하면 PDF로 저장해서 올려 주세요.
           </div>
 
@@ -704,6 +707,36 @@ function toPhoto(file: File): Promise<DataCollectionPhoto> {
     reader.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
     reader.readAsDataURL(file);
   });
+}
+
+async function prepareDataCollectionForStorage(form: DataCollectionForm): Promise<DataCollectionForm> {
+  const photos = await Promise.all(
+    (form.photos ?? []).map(async (photo) => ({
+      ...photo,
+      dataUrl: await compressImageDataUrl(photo.dataUrl),
+    })),
+  );
+  const materials = (form.materials ?? []).map(trimMaterialForStorage);
+
+  return {
+    ...form,
+    photos,
+    materials,
+  };
+}
+
+function trimMaterialForStorage(material: TeachingMaterial): TeachingMaterial {
+  if (!material.dataUrl || material.dataUrl.length <= maxStoredMaterialDataUrlLength) {
+    return material;
+  }
+
+  return {
+    id: material.id,
+    name: material.name,
+    mimeType: material.mimeType,
+    note: material.note,
+    createdAt: material.createdAt,
+  };
 }
 
 function toMaterial(file: File): Promise<TeachingMaterial> {
